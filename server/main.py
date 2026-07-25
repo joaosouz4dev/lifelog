@@ -5,7 +5,6 @@ Sobe com:  uvicorn server.main:app --reload
 
 from __future__ import annotations
 
-import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
@@ -51,9 +50,9 @@ async def lifespan(app: FastAPI):
     stt_chain = build_stt_chain(cfg)
     log.info("cadeia de STT: %s", " -> ".join(stt_chain.chain_names) or "(vazia)")
 
-    worker = TranscriptionWorker(
-        stt_chain, language=cfg.get("stt.providers.faster_whisper_local.language", "pt")
-    )
+    # Idioma no nível do hub: alcançar dentro da config de um provedor nomeado
+    # faria trocar a ordem da cadeia mudar silenciosamente o idioma.
+    worker = TranscriptionWorker(stt_chain, language=cfg.get("stt.language", "pt"))
     worker.start()
 
     yield
@@ -99,6 +98,19 @@ async def ingest(
 # ──────────────────────────────── consulta ────────────────────────────────
 
 
+def _day_bounds(day: str | None) -> tuple[str, str, str]:
+    """Devolve (dia, início, fim_exclusivo) para filtrar por intervalo.
+
+    Filtrar com `date(started_at) = ?` envolve a coluna numa função e o SQLite
+    descarta o índice, caindo em full scan (~21 ms com um ano de dados, contra
+    0,04 ms por intervalo). Como ISO 8601 ordena lexicograficamente, um simples
+    `>= início AND < fim` usa idx_segments_started direto.
+    """
+    target = day or date.today().isoformat()
+    start = datetime.fromisoformat(target).date()
+    return target, start.isoformat(), (start + timedelta(days=1)).isoformat()
+
+
 def _row_to_segment(row) -> Segment:
     return Segment(
         id=row["id"],
@@ -123,13 +135,13 @@ def list_segments(
     source: Source | None = None,
     limit: int = Query(500, le=2000),
 ) -> list[Segment]:
-    target = day or date.today().isoformat()
+    _, start, end = _day_bounds(day)
     sql = """
         SELECT s.*, ss.source, ss.app_name
           FROM segments s JOIN sessions ss ON ss.id = s.session_id
-         WHERE date(s.started_at) = ?
+         WHERE s.started_at >= ? AND s.started_at < ?
     """
-    params: list = [target]
+    params: list = [start, end]
     if source is not None:
         sql += " AND ss.source = ?"
         params.append(source.value)
@@ -175,36 +187,31 @@ def get_audio(segment_id: int) -> FileResponse:
 
 @app.get("/api/stats", response_model=DayStats)
 def stats(day: str | None = None) -> DayStats:
-    target = day or date.today().isoformat()
-    conn = db.get_connection()
+    target, start, end = _day_bounds(day)
 
-    totals = conn.execute(
+    # Um único agrupamento por fonte cobre totais e distribuição: antes eram
+    # duas varreduras do mesmo intervalo, e a UI chama isto a cada 4s.
+    rows = db.get_connection().execute(
         """
-        SELECT COUNT(*) AS total,
-               COALESCE(SUM(duration_ms), 0) AS speech_ms,
-               COALESCE(SUM(status = 'pending' OR status = 'transcribing'), 0) AS pending,
-               COALESCE(SUM(status = 'failed'), 0) AS failed
-          FROM segments WHERE date(started_at) = ?
-        """,
-        (target,),
-    ).fetchone()
-
-    by_source = conn.execute(
-        """
-        SELECT ss.source, COUNT(*) AS n
+        SELECT ss.source AS source,
+               COUNT(*) AS n,
+               COALESCE(SUM(s.duration_ms), 0) AS speech_ms,
+               COALESCE(SUM(s.status IN ('pending', 'transcribing')), 0) AS pending,
+               COALESCE(SUM(s.status = 'failed'), 0) AS failed
           FROM segments s JOIN sessions ss ON ss.id = s.session_id
-         WHERE date(s.started_at) = ? GROUP BY ss.source
+         WHERE s.started_at >= ? AND s.started_at < ?
+         GROUP BY ss.source
         """,
-        (target,),
+        (start, end),
     ).fetchall()
 
     return DayStats(
         date=target,
-        total_segments=totals["total"],
-        total_speech_ms=totals["speech_ms"],
-        pending=totals["pending"],
-        failed=totals["failed"],
-        by_source={r["source"]: r["n"] for r in by_source},
+        total_segments=sum(r["n"] for r in rows),
+        total_speech_ms=sum(r["speech_ms"] for r in rows),
+        pending=sum(r["pending"] for r in rows),
+        failed=sum(r["failed"] for r in rows),
+        by_source={r["source"]: r["n"] for r in rows},
     )
 
 

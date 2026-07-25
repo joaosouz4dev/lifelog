@@ -64,7 +64,9 @@ class SileroVad:
         model_path: Path,
         *,
         threshold: float = 0.5,
-        min_speech_ms: int = 250,
+        # 700ms, não 250: trechos mais curtos voltavam vazios do Whisper em
+        # teste real. É o mesmo valor do config.yaml e do protocol/ingest.md.
+        min_speech_ms: int = 700,
         min_silence_ms: int = 700,
         padding_ms: int = 300,
         max_segment_ms: int = 30_000,
@@ -87,6 +89,9 @@ class SileroVad:
 
         self._state = np.zeros((2, 1, 128), dtype=np.float32)
         self._pending = np.array([], dtype=np.float32)  # sobra entre chamadas
+        # Constante de entrada do modelo: recriá-la a cada janela custaria uma
+        # alocação ~31x por segundo, por trilha.
+        self._sr_input = np.array(SAMPLE_RATE, dtype=np.int64)
 
         # Buffer circular de pré-fala: guarda o áudio imediatamente anterior ao
         # disparo, para o segmento não começar com a primeira sílaba cortada.
@@ -100,12 +105,14 @@ class SileroVad:
         self._segment_start = 0
 
     def _probability(self, window: np.ndarray) -> float:
+        # `window` já é float32 (garantido em process()); astype() aqui copiaria
+        # o buffer inteiro a cada janela sem necessidade.
         out, self._state = self._session.run(
             None,
             {
-                "input": window.reshape(1, -1).astype(np.float32),
+                "input": window.reshape(1, -1),
                 "state": self._state,
-                "sr": np.array(SAMPLE_RATE, dtype=np.int64),
+                "sr": self._sr_input,
             },
         )
         return float(out[0][0])

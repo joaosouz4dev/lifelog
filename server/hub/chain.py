@@ -97,16 +97,20 @@ class ProviderChain(Generic[P]):
         ).fetchone()
         return float(row["total"])
 
-    def _budget_allows(self, estimated_cents: float) -> bool:
+    def _budget_allows(self, estimated_cents: float, spent: float) -> bool:
         """Cabe no teto contando o custo previsto desta chamada?
 
         Compara `gasto + estimativa` contra o teto — só olhar o gasto atual
         deixaria uma chamada cara passar quando o saldo restante é menor que
         ela, estourando o limite.
+
+        `spent` vem de fora para ser lido uma única vez por `run()`: o gasto do
+        dia não muda entre as iterações da cadeia, e a query varre uma tabela
+        que só cresce.
         """
         if self.daily_budget_cents <= 0 or estimated_cents <= 0:
             return True
-        return self.spent_today_cents() + estimated_cents <= self.daily_budget_cents
+        return spent + estimated_cents <= self.daily_budget_cents
 
     def _record(
         self, provider: str, ok: bool, cost: float, latency_ms: int, error: str | None
@@ -141,6 +145,9 @@ class ProviderChain(Generic[P]):
         attempts: list[str] = []
         errors: list[str] = []
         skipped_for_budget = False
+        # Lido uma vez: não muda durante esta chamada e a query varre uma
+        # tabela que cresce a cada transcrição.
+        spent = self.spent_today_cents() if self.daily_budget_cents > 0 else 0.0
 
         for provider in self.providers:
             name = provider.name
@@ -152,12 +159,11 @@ class ProviderChain(Generic[P]):
                 continue
 
             estimated = cost_estimator(provider) if cost_estimator else 0.0
-            if not self._budget_allows(estimated):
+            if not self._budget_allows(estimated, spent):
                 log.warning(
                     "[%s] %s: teto diário não comporta a chamada "
                     "(gasto %.2f + previsto %.2f > teto %.2f centavos), pulando",
-                    self.hub, name, self.spent_today_cents(), estimated,
-                    self.daily_budget_cents,
+                    self.hub, name, spent, estimated, self.daily_budget_cents,
                 )
                 errors.append(f"{name}: teto de gasto")
                 skipped_for_budget = True
@@ -167,22 +173,23 @@ class ProviderChain(Generic[P]):
             started = time.monotonic()
             try:
                 value = await operation(provider)
-            except ProviderError as exc:
-                latency = int((time.monotonic() - started) * 1000)
-                breaker.record_failure(str(exc))
-                self._record(name, False, 0.0, latency, str(exc))
-                errors.append(f"{name}: {exc}")
-                log.warning("[%s] %s falhou: %s", self.hub, name, exc)
-                if not exc.retryable:
-                    # A requisição em si é inválida — não adianta tentar outro.
-                    raise
-                continue
             except Exception as exc:
                 latency = int((time.monotonic() - started) * 1000)
-                breaker.record_failure(repr(exc))
-                self._record(name, False, 0.0, latency, repr(exc))
-                errors.append(f"{name}: {exc!r}")
-                log.exception("[%s] %s erro inesperado", self.hub, name)
+                is_provider_error = isinstance(exc, ProviderError)
+                detail = str(exc) if is_provider_error else repr(exc)
+
+                breaker.record_failure(detail)
+                self._record(name, False, 0.0, latency, detail)
+                errors.append(f"{name}: {detail}")
+
+                if is_provider_error:
+                    log.warning("[%s] %s falhou: %s", self.hub, name, detail)
+                    if not exc.retryable:
+                        # A requisição em si é inválida — tentar outro provedor
+                        # com o mesmo payload só repetiria a falha.
+                        raise
+                else:
+                    log.exception("[%s] %s erro inesperado", self.hub, name)
                 continue
 
             latency = int((time.monotonic() - started) * 1000)

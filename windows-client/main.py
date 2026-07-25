@@ -19,40 +19,20 @@ import threading
 import time
 from pathlib import Path
 
-import yaml
-
+ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(ROOT))
 
 from buffer import SegmentQueue  # noqa: E402
 from capture import CaptureTrack, list_devices, resolve_device  # noqa: E402
 from uploader import Uploader  # noqa: E402
 from vad import ensure_model  # noqa: E402
 
-ROOT = Path(__file__).resolve().parent.parent
+# Mesmo carregador do servidor: um único lugar decide como config.yaml e
+# config.local.yaml se combinam, e o cliente ganha a resolução de ${VAR}.
+from server.config import load_config  # noqa: E402
+
 log = logging.getLogger("lifelog-client")
-
-
-def load_config() -> dict:
-    """Lê config.yaml e aplica config.local.yaml por cima, se existir."""
-    with open(ROOT / "config.yaml", encoding="utf-8") as fh:
-        cfg = yaml.safe_load(fh) or {}
-
-    local = ROOT / "config.local.yaml"
-    if local.exists():
-        with open(local, encoding="utf-8") as fh:
-            overrides = yaml.safe_load(fh) or {}
-
-        def merge(base: dict, over: dict) -> dict:
-            out = dict(base)
-            for key, value in over.items():
-                if isinstance(value, dict) and isinstance(out.get(key), dict):
-                    out[key] = merge(out[key], value)
-                else:
-                    out[key] = value
-            return out
-
-        cfg = merge(cfg, overrides)
-    return cfg
 
 
 def main() -> int:
@@ -78,25 +58,31 @@ def main() -> int:
         return 0
 
     cfg = load_config()
-    capture_cfg = cfg.get("capture", {})
-    vad_cfg = capture_cfg.get("vad", {})
-    port = cfg.get("server", {}).get("port", 8000)
+    port = cfg.get("server.port", 8000)
 
     server_url = args.server or f"http://127.0.0.1:{port}"
     device_id = args.device_id or f"win-{socket.gethostname().lower()}"
 
-    client_dir = ROOT / "data" / "client"
+    client_dir = cfg.resolve_path("server.data_dir", "./data") / "client"
     queue = SegmentQueue(client_dir / "outbox.db", client_dir / "pending")
     model_path = ensure_model(ROOT / "models" / "silero_vad.onnx")
 
+    # Só as chaves realmente presentes no YAML são repassadas; o que faltar usa
+    # o default de SileroVad. Repetir os números aqui criaria uma segunda tabela
+    # de defaults para divergir da primeira.
+    vad_cfg = cfg.get("capture.vad", {}) or {}
     vad_params = {
-        "threshold": float(vad_cfg.get("threshold", 0.5)),
-        "min_speech_ms": int(vad_cfg.get("min_speech_ms", 250)),
-        "min_silence_ms": int(vad_cfg.get("min_silence_ms", 700)),
-        "padding_ms": int(vad_cfg.get("padding_ms", 300)),
-        "max_segment_ms": int(capture_cfg.get("chunk_seconds", 30)) * 1000,
+        key: type_(vad_cfg[key])
+        for key, type_ in (
+            ("threshold", float),
+            ("min_speech_ms", int),
+            ("min_silence_ms", int),
+            ("padding_ms", int),
+            ("max_segment_ms", int),
+        )
+        if vad_cfg.get(key) is not None
     }
-    bitrate = int(capture_cfg.get("encode", {}).get("bitrate", 24000))
+    bitrate = int(cfg.get("capture.encode.bitrate", 24000))
 
     paused = threading.Event()
     sources = ["mic", "system"] if args.source == "both" else [args.source]

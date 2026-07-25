@@ -70,7 +70,7 @@ class TranscriptionWorker:
         with db.transaction() as conn:
             row = conn.execute(
                 """
-                SELECT id, audio_path, attempts FROM segments
+                SELECT id, audio_path, attempts, duration_ms FROM segments
                  WHERE status = 'pending' AND attempts < ?
                  ORDER BY started_at LIMIT 1
                 """,
@@ -88,8 +88,12 @@ class TranscriptionWorker:
             )
             if updated.rowcount == 0:
                 return None
-            return {"id": int(row["id"]), "audio_path": row["audio_path"],
-                    "attempts": int(row["attempts"]) + 1}
+            return {
+                "id": int(row["id"]),
+                "audio_path": row["audio_path"],
+                "attempts": int(row["attempts"]) + 1,
+                "duration_ms": int(row["duration_ms"]),
+            }
 
     async def _process(self, segment: dict) -> None:
         segment_id = segment["id"]
@@ -101,12 +105,13 @@ class TranscriptionWorker:
             )
             return
 
+        # duration_ms já veio do SELECT que reservou o segmento; o estimador é
+        # chamado uma vez por provedor e não deve tocar o banco por isso.
+        duration_ms = segment["duration_ms"]
         try:
             result = await self.chain.run(
                 lambda p: p.transcribe(audio_path, self.language),
-                cost_estimator=lambda p: p.estimate_cost_cents(
-                    self._duration_ms(segment_id)
-                ),
+                cost_estimator=lambda p: p.estimate_cost_cents(duration_ms),
             )
         except BudgetExceeded as exc:
             # Não é culpa do segmento: devolve para a fila sem gastar tentativa.
@@ -133,13 +138,6 @@ class TranscriptionWorker:
         )
 
     # ──────────────────────────── persistência ────────────────────────────
-
-    @staticmethod
-    def _duration_ms(segment_id: int) -> int:
-        row = db.get_connection().execute(
-            "SELECT duration_ms FROM segments WHERE id = ?", (segment_id,)
-        ).fetchone()
-        return int(row["duration_ms"]) if row else 0
 
     @staticmethod
     def _mark_done(segment_id: int, result) -> None:

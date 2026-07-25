@@ -96,6 +96,47 @@ def test_fontes_diferentes_ficam_em_sessoes_separadas(temp_db, tmp_path):
     assert sessions[0] != sessions[1]
 
 
+def test_timestamp_com_offset_e_normalizado(temp_db, tmp_path):
+    """Cliente em outro fuso não pode cair no dia errado.
+
+    O servidor converte para a hora local e grava sem offset, senão
+    `date(started_at)` agruparia o mesmo instante em dias diferentes conforme
+    o dispositivo de origem.
+    """
+    from datetime import timezone
+
+    # Mesmo instante, expresso em dois fusos diferentes.
+    utc = datetime(2026, 7, 25, 23, 30, tzinfo=timezone.utc)
+    other = utc.astimezone(timezone(timedelta(hours=9)))
+
+    meta_utc = IngestMeta(
+        device_id="celular", source=Source.MIC, started_at=utc,
+        duration_ms=3000, client_uid="uid-tz000001",
+    )
+    meta_other = IngestMeta(
+        device_id="celular", source=Source.MIC, started_at=other,
+        duration_ms=3000, client_uid="uid-tz000002",
+    )
+
+    assert meta_utc.started_at == meta_other.started_at, (
+        "o mesmo instante deve normalizar para o mesmo horário local"
+    )
+    assert meta_utc.started_at.tzinfo is None, "deve ser gravado sem offset"
+
+    # E o valor normalizado corresponde à hora local de verdade.
+    assert meta_utc.started_at == utc.astimezone().replace(tzinfo=None)
+
+
+def test_timestamp_sem_offset_e_aceito_como_hora_local(temp_db, tmp_path):
+    """Compatibilidade: o cliente Windows envia sem offset por rodar local."""
+    naive = datetime(2026, 7, 25, 14, 0, 0)
+    meta = IngestMeta(
+        device_id="pc", source=Source.MIC, started_at=naive,
+        duration_ms=3000, client_uid="uid-tz000003",
+    )
+    assert meta.started_at == naive
+
+
 def test_primeira_transcricao_indexa_no_fts(temp_db, tmp_path):
     """Todo segmento nasce com transcript NULL e recebe texto depois.
 

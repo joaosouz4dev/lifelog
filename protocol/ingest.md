@@ -45,13 +45,23 @@ Dois campos obrigatórios:
 
 | Campo         | Obrigatório | Regra |
 |---------------|-------------|-------|
-| `device_id`   | sim | 1–64 caracteres. Estável por dispositivo (ex.: `win-russo`, `android-pixel`, `gadget-01`). |
+| `device_id`   | sim | 1–64 caracteres. Estável por dispositivo. Use o prefixo da plataforma por convenção (`win-`, `android-`, `gadget-`) — o servidor não o interpreta, mas ele torna a origem legível na interface. |
 | `source`      | sim | `mic`, `system` ou `gadget`. |
-| `started_at`  | sim | ISO 8601, hora local do início da fala. |
+| `started_at`  | sim | ISO 8601 do início da fala. **Envie com offset** (`2026-07-25T14:32:07-03:00`); ver "Fuso horário" abaixo. |
 | `duration_ms` | sim | Inteiro, 1 a 600000 (10 min). |
 | `client_uid`  | sim | 8–64 caracteres, único e **estável entre retentativas**. |
 | `app_name`    | não | App que originou o áudio, quando o cliente souber. |
-| `sample_rate` | não | 8000–48000. Padrão 16000. |
+| `sample_rate` | não | 8000–48000. Padrão 16000. Validado mas ainda não persistido — o servidor assume que o áudio está em 16 kHz. |
+
+### Fuso horário
+
+Clientes devem enviar `started_at` **com offset**. O servidor converte para a
+hora local dele e armazena sem offset, de modo que celular viajando, gadget com
+relógio próprio e PC caiam todos no mesmo eixo de tempo.
+
+Timestamps sem offset são aceitos e tratados como já sendo hora local do
+servidor — é o que o cliente Windows envia hoje, por rodar na mesma máquina.
+Para qualquer cliente remoto, omitir o offset agrupa os segmentos no dia errado.
 
 `client_uid` precisa ser gerado **uma vez, ao enfileirar** — nunca a cada
 tentativa de envio. Se mudar entre retentativas, a idempotência quebra e o
@@ -69,6 +79,15 @@ segmento duplica.
 
 Um segmento de 5 s ocupa ~15 KB. Mono 16 kHz é o que o Whisper consome
 internamente — enviar mais que isso é desperdício de banda.
+
+O encode não tem solução compartilhada entre plataformas; cada cliente usa o
+que tem à mão:
+
+| Plataforma | Encoder |
+|------------|---------|
+| Windows | `ffmpeg` via subprocess (exige ffmpeg no PATH) |
+| Android | `MediaCodec` com `MIMETYPE_AUDIO_OPUS`, nativo desde a API 21 |
+| ESP32 | `libopus` compilado no firmware |
 
 ## Respostas
 
@@ -119,7 +138,7 @@ tentativas. É o que o cliente Windows usa (`windows-client/buffer.py`).
 
 ## Parâmetros de VAD
 
-Estes valores estão em `config.yaml` e foram ajustados com áudio real:
+Todos vivem sob `capture.vad` no `config.yaml` e foram ajustados com áudio real:
 
 | Parâmetro | Valor | Motivo |
 |-----------|-------|--------|
@@ -186,7 +205,7 @@ response = httpx.post(
 |----------|-----------|
 | `GET /api/segments?day=YYYY-MM-DD&source=mic` | Segmentos do dia |
 | `GET /api/search?q=termo` | Busca textual (ignora acentos) |
-| `GET /api/segments/{id}/audio` | Baixa o áudio (410 se já expirou) |
+| `GET /api/segments/{id}/audio` | Baixa o áudio (404 se o segmento não existe, 410 se o áudio expirou) |
 | `GET /api/stats?day=YYYY-MM-DD` | Contagens do dia |
 | `GET /api/days` | Dias com captura |
 | `GET /api/hub/stt` | Estado dos provedores e gasto do dia |

@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class Source(StrEnum):
@@ -30,6 +30,8 @@ class IngestMeta(BaseModel):
 
     device_id: str = Field(min_length=1, max_length=64)
     source: Source
+    # ISO 8601. Clientes devem enviar com offset (ex.: 2026-07-25T14:32:07-03:00);
+    # sem offset assume-se a hora local do servidor — ver o validador abaixo.
     started_at: datetime
     duration_ms: int = Field(gt=0, le=600_000)
     # Identificador estável gerado pelo cliente. Reenviar o mesmo uid após um
@@ -37,6 +39,22 @@ class IngestMeta(BaseModel):
     client_uid: str = Field(min_length=8, max_length=64)
     app_name: str | None = Field(default=None, max_length=200)
     sample_rate: int = Field(default=16000, ge=8000, le=48000)
+
+    @field_validator("started_at")
+    @classmethod
+    def normalize_timezone(cls, value: datetime) -> datetime:
+        """Converte para a hora local do servidor e remove o offset.
+
+        Dispositivos em fusos diferentes (celular viajando, gadget com relógio
+        próprio) alimentam o mesmo banco. Sem normalizar, `date(started_at)`
+        agruparia o mesmo instante em dias diferentes conforme a origem.
+
+        Timestamps sem offset são aceitos como já sendo hora local — é o que
+        os clientes atuais enviam.
+        """
+        if value.tzinfo is None:
+            return value
+        return value.astimezone().replace(tzinfo=None)
 
 
 class IngestResponse(BaseModel):

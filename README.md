@@ -101,9 +101,13 @@ da qual você participa é legal (STF, RE 583937), mas armazenar e transcrever
 terceiros pede cuidado sob a LGPD. O projeto oferece:
 
 - `retention.audio_days` — apaga o áudio após N dias, preservando a transcrição
-- `capture.blocklist` — apps cujo áudio nunca é capturado
-- Transcrição 100% local por padrão
 - `POST /api/retention/purge` — aplica a retenção sob demanda
+- Transcrição 100% local por padrão
+- Ctrl+C encerra a captura a qualquer momento
+
+Ainda não implementado: `capture.windows_blocklist` (apps cujo áudio nunca é
+capturado) está previsto para a Fase 4 — a chave existe no `config.yaml` mas
+nada a lê ainda.
 
 O diretório `data/` está no `.gitignore`. Nunca versione áudio ou transcrições.
 

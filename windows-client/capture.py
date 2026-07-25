@@ -1,38 +1,33 @@
-"""Cliente de captura para Windows.
+"""Captura de áudio no Windows.
 
 Grava duas trilhas em paralelo — microfone e áudio do sistema (WASAPI loopback,
 que pega tudo que sai da placa de som, sem as restrições do Android) — aplica
 VAD em cada uma, e envia só os trechos com fala para o servidor.
 
-Uso:
-    python capture.py                      # ambas as trilhas
-    python capture.py --source mic         # só microfone
-    python capture.py --list-devices       # diagnóstico
+A CLI vive em main.py; este módulo só expõe as peças de captura.
 """
 
 from __future__ import annotations
 
-import argparse
-import io
 import logging
-import signal
 import subprocess
 import sys
 import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from buffer import SegmentQueue  # noqa: E402
-from vad import SAMPLE_RATE, SileroVad, ensure_model  # noqa: E402
+from vad import SAMPLE_RATE, SileroVad  # noqa: E402
+
+if TYPE_CHECKING:
+    from buffer import SegmentQueue
 
 log = logging.getLogger("capture")
-
-ROOT = Path(__file__).resolve().parent.parent
 
 
 # ─────────────────────────────── áudio ───────────────────────────────

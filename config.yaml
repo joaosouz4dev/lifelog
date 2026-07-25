@@ -1,0 +1,107 @@
+# Lifelog — configuração
+#
+# Segredos NÃO ficam aqui. Use variáveis de ambiente (${VAR}) ou config.local.yaml
+# (que está no .gitignore e sobrescreve este arquivo).
+
+server:
+  host: 0.0.0.0
+  port: 8000
+  data_dir: ./data
+  db_path: ./data/lifelog.db
+
+# ─────────────────────────────────────────────────────────────
+# Hub de transcrição (STT)
+# A cadeia é tentada em ordem. Provedor que falha entra em
+# circuit breaker e o próximo assume.
+# ─────────────────────────────────────────────────────────────
+stt:
+  chain: [faster_whisper_local, deepgram]
+
+  # Teto de gasto diário com provedores pagos. Ao estourar, só os
+  # provedores locais continuam; os pagos são pulados.
+  daily_budget_cents: 200
+
+  circuit_breaker:
+    failure_threshold: 3      # falhas consecutivas para abrir
+    reset_after_seconds: 300  # tempo até tentar de novo
+
+  providers:
+    faster_whisper_local:
+      type: faster_whisper
+      model: large-v3
+      device: cuda            # cai para cpu automaticamente se não houver GPU
+      compute_type: float16   # use int8 se a VRAM apertar
+      language: pt
+      beam_size: 5
+
+    deepgram:
+      type: deepgram
+      enabled: false          # ative quando tiver a chave
+      api_key: ${DEEPGRAM_API_KEY}
+      model: nova-2
+      language: pt-BR
+
+    openai_whisper:
+      type: openai
+      enabled: false
+      api_key: ${OPENAI_API_KEY}
+      model: whisper-1
+
+# ─────────────────────────────────────────────────────────────
+# Hub de LLM (relatórios e chat) — usado a partir da Fase 3
+# ─────────────────────────────────────────────────────────────
+llm:
+  chain: [claude, ollama]
+  daily_budget_cents: 500
+
+  circuit_breaker:
+    failure_threshold: 3
+    reset_after_seconds: 300
+
+  providers:
+    claude:
+      type: anthropic
+      enabled: false
+      api_key: ${ANTHROPIC_API_KEY}
+      model: claude-sonnet-5   # opus-5 para relatório mensal, se quiser
+      max_tokens: 16000
+
+    ollama:
+      type: ollama
+      enabled: false
+      base_url: http://localhost:11434
+      model: qwen2.5:14b
+
+# ─────────────────────────────────────────────────────────────
+# Captura (lido pelos clientes)
+# ─────────────────────────────────────────────────────────────
+capture:
+  sample_rate: 16000
+  chunk_seconds: 30
+
+  vad:
+    threshold: 0.5            # 0..1 — acima disso é fala
+    # 700ms filtra ruídos e interjeições soltas. Em teste real, trechos de
+    # ~600ms chegavam ao Whisper e voltavam vazios ou com confiança baixa,
+    # gastando GPU à toa. Abaixe se estiver perdendo respostas curtas ("sim").
+    min_speech_ms: 700
+    min_silence_ms: 700       # silêncio que encerra um segmento
+    padding_ms: 300           # margem antes/depois da fala
+
+  encode:
+    codec: opus
+    bitrate: 24000
+
+  # Janelas/apps cujo áudio de sistema deve ser ignorado.
+  # Casa por substring, sem diferenciar maiúsculas.
+  blocklist:
+    - "1Password"
+    - "Bitwarden"
+    - "KeePass"
+
+# ─────────────────────────────────────────────────────────────
+# Privacidade e retenção
+# ─────────────────────────────────────────────────────────────
+retention:
+  audio_days: 30              # 0 = apagar áudio logo após transcrever
+  transcript_days: 0          # 0 = manter para sempre

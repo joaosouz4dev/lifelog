@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Dados capturados — nunca versionar
+data/
+*.db
+*.db-wal
+*.db-shm
+*.opus
+*.wav
+
+# Exceção: fixture sintética (voz de TTS, não é gravação real) usada pelos
+# testes do VAD. Sem ela, test_vad.py é pulado em outra máquina.
+!tests/fixtures/*.opus
+
+# Configuração local com segredos
+config.local.yaml
+.env
+
+# Modelos baixados
+models/
+*.onnx
+
+# Node (Android, fase 2)
+node_modules/

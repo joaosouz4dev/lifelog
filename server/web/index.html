@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lifelog</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header>
+  <h1>Lifelog</h1>
+  <nav>
+    <input type="date" id="day-picker" aria-label="Escolher dia">
+    <input type="search" id="search-box" placeholder="Buscar na transcrição…" aria-label="Buscar">
+    <button id="hub-btn" type="button" title="Status dos provedores">Hub</button>
+  </nav>
+</header>
+
+<section id="stats" class="stats" aria-live="polite"></section>
+
+<main>
+  <div id="timeline" class="timeline"></div>
+  <p id="empty" class="empty" hidden>
+    Nenhum segmento neste dia.<br>
+    <small>Rode <code>python windows-client/main.py</code> para começar a capturar.</small>
+  </p>
+</main>
+
+<dialog id="hub-dialog">
+  <h2>Hub de transcrição</h2>
+  <div id="hub-body"></div>
+  <form method="dialog"><button>Fechar</button></form>
+</dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

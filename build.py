@@ -25,6 +25,24 @@ BUILD = ROOT / "build"
 # protocolo por string em runtime, e o faster_whisper carrega o backend do
 # CTranslate2 dinamicamente.
 HIDDEN_IMPORTS = [
+    # O pacote `server` inteiro: o PyInstaller segue imports estáticos, e
+    # tray.py (o ponto de entrada) não importa o servidor — sem isto o
+    # LifelogServer.exe sobe e morre com ModuleNotFoundError.
+    "server",
+    "server.main",
+    "server.config",
+    "server.db",
+    "server.models",
+    "server.classify",
+    "server.hub",
+    "server.hub.stt",
+    "server.hub.llm",
+    "server.pipeline",
+    "server.pipeline.ingest",
+    "server.pipeline.transcribe",
+    "server.reports",
+    "server.reports.builder",
+    "server.reports.generator",
     "uvicorn.logging",
     "uvicorn.loops.auto",
     "uvicorn.loops.asyncio",
@@ -97,6 +115,10 @@ def pyinstaller_args(name: str, entry: str, *, windowed: bool) -> list[str]:
         args += ["--hidden-import", module]
     for module in EXCLUDES:
         args += ["--exclude-module", module]
+
+    # Varre o pacote inteiro em vez de depender da lista acima ficar completa:
+    # um módulo novo em server/ passaria despercebido até alguém rodar o .exe.
+    args += ["--collect-submodules", "server"]
     # Caminho absoluto: com --specpath apontando para build/, o PyInstaller
     # resolve os --add-data relativos a partir de lá e não encontra nada.
     for src, dest in DATAS:

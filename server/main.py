@@ -14,7 +14,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import chat, db, reports
+from . import chat, db, reports, version
 from .classify import classify_app
 from .config import get_config
 from .hub.base import BudgetExceeded, ProviderError
@@ -369,7 +369,13 @@ def purge() -> dict:
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "version": app.version}
+    return {"status": "ok", "version": version.current()}
+
+
+@app.get("/api/version")
+async def version_info() -> dict:
+    """Versão em execução e se há atualização publicada."""
+    return await version.check_update()
 
 
 # ──────────────────────────────────  UI  ──────────────────────────────────

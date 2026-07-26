@@ -111,6 +111,12 @@ def main() -> int:
     banner = ASSETS / "icon-512.png"
     draw_icon(512).save(banner)
     print(f"  {banner.relative_to(ROOT)}")
+
+    # Servido pela interface web como logo do cabeçalho.
+    web = ROOT / "server" / "web" / "static" / "icon.png"
+    web.parent.mkdir(parents=True, exist_ok=True)
+    draw_icon(96).save(web)
+    print(f"  {web.relative_to(ROOT)}")
     return 0
 
 

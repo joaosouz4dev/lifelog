@@ -74,6 +74,20 @@ HIDDEN_IMPORTS = [
     "win32event",
     "win32api",
     "winerror",
+    # A janela nativa: o pywebview escolhe o backend por string em runtime, e
+    # no Windows o backend é o WebView2 via clr/pythonnet.
+    "webview",
+    "webview.platforms.edgechromium",
+    "clr_loader",
+    "pythonnet",
+]
+
+# Os executáveis gerados, na ordem: o primeiro recebe as dependências e os
+# demais são fundidos na pasta dele.
+TARGETS = [
+    ("Lifelog", "windows-client/tray.py"),          # a bandeja
+    ("LifelogServer", "scripts/run_server.py"),     # o servidor
+    ("LifelogUI", "windows-client/window.py"),      # a janela da interface
 ]
 
 # Pacotes que não fazem parte do Lifelog mas aparecem no Python do
@@ -162,28 +176,28 @@ def main() -> int:
         if path.exists():
             shutil.rmtree(path)
 
-    # A bandeja primeiro: é o executável principal, e o segundo build entra
-    # na mesma pasta reaproveitando as dependências.
-    run(pyinstaller_args("Lifelog", "windows-client/tray.py", windowed=True))
-    run(pyinstaller_args("LifelogServer", "scripts/run_server.py", windowed=True))
+    # A bandeja primeiro: é o executável principal, e os outros entram na
+    # mesma pasta reaproveitando as dependências.
+    for name, entry in TARGETS:
+        run(pyinstaller_args(name, entry, windowed=True))
 
-    # O PyInstaller cria dist/Lifelog/ e dist/LifelogServer/; junta os dois
-    # para o instalador empacotar uma pasta só.
-    tray_dir = DIST / "Lifelog"
-    server_dir = DIST / "LifelogServer"
-    if server_dir.exists():
-        for item in server_dir.iterdir():
+    # O PyInstaller cria uma pasta por executável; junta todas na primeira
+    # para o instalador empacotar um diretório só.
+    tray_dir = DIST / TARGETS[0][0]
+    for name, _ in TARGETS[1:]:
+        extra = DIST / name
+        if not extra.exists():
+            continue
+        for item in extra.iterdir():
             target = tray_dir / item.name
             if target.exists():
                 continue  # dependência já veio no build da bandeja
             shutil.move(str(item), str(target))
-        shutil.rmtree(server_dir, ignore_errors=True)
+        shutil.rmtree(extra, ignore_errors=True)
 
-    exe = tray_dir / "Lifelog.exe"
-    server_exe = tray_dir / "LifelogServer.exe"
-    for path in (exe, server_exe):
-        if not path.exists():
-            raise SystemExit(f"executável não gerado: {path}")
+    for name, _ in TARGETS:
+        if not (tray_dir / f"{name}.exe").exists():
+            raise SystemExit(f"executável não gerado: {tray_dir / f'{name}.exe'}")
 
     total = sum(f.stat().st_size for f in tray_dir.rglob("*") if f.is_file())
     print(f"\npronto: {tray_dir}  ({total / 1_000_000:.0f} MB)")

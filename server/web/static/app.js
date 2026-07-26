@@ -566,4 +566,31 @@ document.addEventListener('visibilitychange', () => {
   else if (!$('#view-timeline').hidden) loadDay(dayPicker.value);
 });
 
+// ─────────────────────────────── versão ───────────────────────────────
+
+async function loadVersion() {
+  const label = $('#version-label');
+  const status = $('#update-status');
+
+  try {
+    const info = await fetchJSON('/api/version');
+    label.textContent = `Lifelog ${info.current}`;
+
+    if (info.update_available) {
+      status.className = 'update-status has-update';
+      status.innerHTML =
+        `versão ${escapeHTML(info.latest)} disponível — ` +
+        `<a href="${info.url}" target="_blank" rel="noopener">baixar</a>`;
+    } else if (info.checked) {
+      status.textContent = 'atualizado';
+    } else {
+      // Rodando do código-fonte, ou sem internet: nada a oferecer.
+      status.textContent = '';
+    }
+  } catch {
+    label.textContent = 'Lifelog';
+  }
+}
+
+loadVersion();
 loadDay(dayPicker.value);

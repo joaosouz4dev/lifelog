@@ -121,7 +121,29 @@ class LifelogTray:
         self._refresh()
 
     def _open_ui(self, _icon=None, _item=None) -> None:
+        """Abre a interface numa janela própria, com ícone na barra de tarefas.
+
+        Num processo separado porque o WebView2 exige a thread principal, que
+        aqui é da bandeja. Também isola travadas da janela da captura.
+        """
         url = self.runner.server_url if self.runner else "http://127.0.0.1:8000"
+
+        if getattr(sys, "frozen", False):
+            exe = Path(sys.executable).parent / "LifelogUI.exe"
+            cmd = [str(exe), url] if exe.exists() else None
+        else:
+            cmd = [sys.executable, str(Path(__file__).parent / "window.py"), url]
+
+        if cmd:
+            try:
+                subprocess.Popen(
+                    cmd,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+                return
+            except Exception:
+                log.exception("falha ao abrir a janela; caindo para o navegador")
+
         webbrowser.open(url)
 
     def _quit(self, icon=None, _item=None) -> None:

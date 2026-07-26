@@ -11,6 +11,7 @@
 #define MyAppName "Lifelog"
 #define MyAppExe "Lifelog.exe"
 #define MyServerExe "LifelogServer.exe"
+#define MyUiExe "LifelogUI.exe"
 #define MyPublisher "joaosouz4dev"
 #define MyURL "https://github.com/joaosouz4dev/lifelog"
 
@@ -48,7 +49,9 @@ Source: "..\dist\Lifelog\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdi
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"
-Name: "{group}\Interface do Lifelog"; Filename: "http://localhost:8000"
+; Janela propria em vez de um atalho de URL: abrir no navegador obriga a
+; pessoa a lidar com a porta, e a aba se perde entre as outras.
+Name: "{group}\Interface do Lifelog"; Filename: "{app}\{#MyUiExe}"
 Name: "{group}\Desinstalar o {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"; Tasks: desktopicon
 ; A bandeja sobe o servidor quando precisa, entao um atalho na inicializacao
@@ -60,7 +63,7 @@ Filename: "{app}\{#MyAppExe}"; Description: "Abrir o {#MyAppName} agora"; Flags:
 
 [UninstallRun]
 ; Encerra a captura antes de remover os arquivos, senao os .exe ficam em uso.
-Filename: "{cmd}"; Parameters: "/C taskkill /F /IM {#MyAppExe} /IM {#MyServerExe}"; Flags: runhidden; RunOnceId: "PararLifelog"
+Filename: "{cmd}"; Parameters: "/C taskkill /F /IM {#MyAppExe} /IM {#MyServerExe} /IM {#MyUiExe}"; Flags: runhidden; RunOnceId: "PararLifelog"
 
 [Messages]
 brazilianportuguese.WelcomeLabel2=Isto vai instalar o [name/ver] no seu computador.%n%nO Lifelog grava o microfone e o audio do sistema, transcreve tudo localmente e gera relatorios do seu dia.%n%nSuas gravacoes ficam apenas neste computador.

@@ -29,6 +29,9 @@ comtypes==1.4.8; sys_platform == "win32"
 # pywin32 dá o mutex nomeado que impede duas capturas simultâneas —
 # duas bandejas disputam o mesmo dispositivo de áudio e a mesma fila.
 pywin32==308; sys_platform == "win32"
+# Janela nativa da interface, sobre o WebView2 que já vem no Windows 11 —
+# sem isto a interface só abre como aba do navegador.
+pywebview==6.2.1; sys_platform == "win32"
 
 # Testes
 pytest==8.3.4

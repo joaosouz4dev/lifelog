@@ -14,8 +14,9 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import db
+from . import db, reports
 from .config import get_config
+from .hub.base import BudgetExceeded, ProviderError
 from .hub.llm import build_llm_chain
 from .hub.stt import build_stt_chain
 from .models import DayStats, HubStatus, IngestMeta, IngestResponse, Segment, Source
@@ -268,6 +269,71 @@ async def llm_status() -> HubStatus:
         spent_today_cents=llm_chain.spent_today_cents(),
         daily_budget_cents=llm_chain.daily_budget_cents,
     )
+
+
+# ─────────────────────────────── relatórios ───────────────────────────────
+
+
+@app.get("/api/reports")
+def list_reports(limit: int = Query(60, le=365)) -> list[dict]:
+    rows = db.get_connection().execute(
+        """
+        SELECT id, type, period_start, period_end, llm_provider, cost_cents, generated_at
+          FROM reports ORDER BY period_start DESC LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/reports/{report_id}")
+def get_report(report_id: int) -> dict:
+    row = db.get_connection().execute(
+        "SELECT * FROM reports WHERE id = ?", (report_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "relatório não encontrado")
+    return dict(row)
+
+
+@app.post("/api/reports/daily")
+async def create_daily_report(day: str | None = None) -> dict:
+    """Gera (ou regera) o relatório de um dia. Padrão: ontem."""
+    if llm_chain is None:
+        raise HTTPException(503, "hub de LLM não inicializado")
+
+    target = date.fromisoformat(day) if day else date.today() - timedelta(days=1)
+    try:
+        return await reports.generate_daily(llm_chain, target)
+    except reports.NoMaterial as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except BudgetExceeded as exc:
+        raise HTTPException(429, str(exc)) from exc
+    except ProviderError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+@app.post("/api/reports/monthly")
+async def create_monthly_report(month: str | None = None) -> dict:
+    """Gera o relatório de um mês (YYYY-MM). Padrão: o mês passado."""
+    if llm_chain is None:
+        raise HTTPException(503, "hub de LLM não inicializado")
+
+    if month:
+        year, mon = (int(p) for p in month.split("-", 1))
+    else:
+        first_of_month = date.today().replace(day=1)
+        previous = first_of_month - timedelta(days=1)
+        year, mon = previous.year, previous.month
+
+    try:
+        return await reports.generate_monthly(llm_chain, year, mon)
+    except reports.NoMaterial as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except BudgetExceeded as exc:
+        raise HTTPException(429, str(exc)) from exc
+    except ProviderError as exc:
+        raise HTTPException(502, str(exc)) from exc
 
 
 @app.post("/api/segments/retry")

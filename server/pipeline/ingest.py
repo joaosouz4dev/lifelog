@@ -21,6 +21,35 @@ log = logging.getLogger(__name__)
 # Uma lacuna maior que isto significa que a captura foi interrompida.
 SESSION_GAP = timedelta(minutes=5)
 
+# Assinatura do container Ogg e do cabeçalho Opus dentro dele.
+_OGG_MAGIC = b"OggS"
+_OPUS_MARKER = b"OpusHead"
+
+
+class InvalidAudio(ValueError):
+    """Áudio que não cumpre o formato do protocolo."""
+
+
+def validate_audio(payload: bytes) -> None:
+    """Rejeita o que não for Opus em container Ogg.
+
+    Sem esta checagem, um cliente que envia WAV ou MP3 recebe 200, o worker
+    transcreve lixo e o segmento fica marcado como `done` — indistinguível de
+    silêncio legítimo. O erro precisa chegar a quem está escrevendo o cliente,
+    não se esconder na timeline.
+    """
+    if len(payload) < 4:
+        raise InvalidAudio("áudio vazio ou truncado")
+    if not payload.startswith(_OGG_MAGIC):
+        raise InvalidAudio(
+            f"esperado container Ogg (assinatura {_OGG_MAGIC!r}), "
+            f"veio {payload[:4]!r} — o protocolo exige Opus/Ogg"
+        )
+    # O OpusHead fica no primeiro pacote; procurar no início do arquivo basta
+    # e evita varrer megabytes à toa.
+    if _OPUS_MARKER not in payload[:512]:
+        raise InvalidAudio("container Ogg sem cabeçalho Opus (codec errado?)")
+
 
 def _audio_path(data_dir: Path, meta: IngestMeta) -> Path:
     """Caminho particionado por dia — mantém as pastas navegáveis e facilita

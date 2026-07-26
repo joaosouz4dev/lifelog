@@ -96,6 +96,49 @@ def test_fontes_diferentes_ficam_em_sessoes_separadas(temp_db, tmp_path):
     assert sessions[0] != sessions[1]
 
 
+def test_valida_opus_e_rejeita_outros_formatos(temp_db, tmp_path):
+    """Formato errado precisa falhar na ingestão, não virar segmento vazio.
+
+    Aceitar WAV com 200 fazia o worker transcrever lixo e marcar o segmento
+    como `done` — um cliente novo mal implementado enviaria dias de áudio
+    sem nunca ver um erro.
+    """
+    import pytest
+
+    from server.pipeline.ingest import InvalidAudio, validate_audio
+
+    # Opus/Ogg válido: assinatura Ogg + OpusHead no primeiro pacote.
+    valido = b"OggS" + b"\x00" * 24 + b"OpusHead" + b"\x00" * 16
+    validate_audio(valido)  # não deve levantar
+
+    with pytest.raises(InvalidAudio, match="container Ogg"):
+        validate_audio(b"RIFF\x00\x00\x00\x00WAVEfmt ")  # WAV
+
+    with pytest.raises(InvalidAudio, match="container Ogg"):
+        validate_audio(b"\xff\xfb\x90\x00" + b"\x00" * 40)  # MP3
+
+    with pytest.raises(InvalidAudio, match="cabeçalho Opus"):
+        validate_audio(b"OggS" + b"\x00" * 24 + b"vorbis" + b"\x00" * 16)  # Ogg Vorbis
+
+    with pytest.raises(InvalidAudio, match="vazio ou truncado"):
+        validate_audio(b"Og")
+
+
+def test_fixture_real_passa_na_validacao(temp_db, tmp_path):
+    """A validação não pode rejeitar o que o cliente Windows produz."""
+    from pathlib import Path
+
+    from server.pipeline.ingest import validate_audio
+
+    fixture = Path(__file__).parent / "fixtures" / "fala.opus"
+    if not fixture.exists():
+        import pytest
+
+        pytest.skip("fixture ausente")
+
+    validate_audio(fixture.read_bytes())
+
+
 def test_timestamp_com_offset_e_normalizado(temp_db, tmp_path):
     """Cliente em outro fuso não pode cair no dia errado.
 

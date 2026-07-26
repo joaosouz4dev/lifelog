@@ -89,6 +89,14 @@ async def ingest(
         raise HTTPException(413, f"áudio maior que {MAX_UPLOAD_BYTES} bytes")
 
     try:
+        ingest_pipeline.validate_audio(payload)
+    except ingest_pipeline.InvalidAudio as exc:
+        # 422 é definitivo: o cliente descarta em vez de insistir com o mesmo
+        # payload inválido para sempre.
+        log.warning("áudio rejeitado de %s: %s", parsed.device_id, exc)
+        raise HTTPException(422, str(exc)) from exc
+
+    try:
         return ingest_pipeline.ingest_segment(DATA_DIR, parsed, payload)
     except Exception as exc:
         log.exception("falha ao ingerir %s", parsed.client_uid)

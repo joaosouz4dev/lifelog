@@ -77,6 +77,11 @@ segmento duplica.
 | Bitrate | ~24 kbps (transparente para voz) |
 | Tamanho máximo | 50 MB |
 
+O servidor **verifica** a assinatura: o payload precisa começar com `OggS` e
+conter `OpusHead` no primeiro pacote. Enviar WAV, MP3 ou Ogg/Vorbis devolve
+422 com a explicação — o erro aparece enquanto você escreve o cliente, não
+semanas depois numa timeline vazia.
+
 Um segmento de 5 s ocupa ~15 KB. Mono 16 kHz é o que o Whisper consome
 internamente — enviar mais que isso é desperdício de banda.
 
@@ -103,7 +108,7 @@ cliente deve tratar como sucesso e remover o item da fila.
 | Código | Significado | O cliente deve |
 |--------|-------------|----------------|
 | 413 | Áudio acima de 50 MB | Descartar |
-| 422 | `meta` inválido ou áudio vazio | Descartar |
+| 422 | `meta` inválido, áudio vazio ou **formato diferente de Opus/Ogg** | Descartar |
 | 5xx | Falha no servidor | Retentar com backoff |
 | timeout / rede | Servidor inacessível | Retentar com backoff |
 

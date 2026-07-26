@@ -62,7 +62,8 @@ class SegmentQueue:
                     attempts    INTEGER NOT NULL DEFAULT 0,
                     next_try_at REAL    NOT NULL DEFAULT 0,
                     last_error  TEXT,
-                    created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+                    -- hora local, como todo timestamp do projeto
+                    created_at  TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
                 );
                 CREATE INDEX IF NOT EXISTS idx_outbox_ready ON outbox(next_try_at, id);
             """)

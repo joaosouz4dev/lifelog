@@ -1,0 +1,33 @@
+name: CI
+
+# Roda os testes em cada push e pull request, sem gerar release. Serve para
+# ver o resultado antes de a mudanca chegar na main.
+
+on:
+  push:
+    branches-ignore: [main]     # na main quem roda os testes e o release.yml
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependencias
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pystray pycaw comtypes
+
+      - name: Testes
+        shell: pwsh
+        run: python -m pytest tests/ -q

@@ -25,3 +25,12 @@ models/
 
 # Node (Android, fase 2)
 node_modules/
+
+# Build e empacotamento
+dist/
+build/
+*.spec
+installer/output/
+
+# Versão injetada pelo CI
+server/_version.py

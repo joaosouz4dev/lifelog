@@ -10,6 +10,7 @@ privacidade, não um recurso.
 from __future__ import annotations
 
 import logging
+import subprocess
 import sys
 import threading
 import webbrowser
@@ -24,24 +25,42 @@ from runner import CaptureRunner  # noqa: E402
 
 log = logging.getLogger("tray")
 
-# Vermelho gravando, cinza pausado — legível de relance na barra de tarefas.
-COLOR_RECORDING = (200, 70, 60)
-COLOR_PAUSED = (130, 130, 130)
+ROOT = Path(__file__).resolve().parent.parent
+ASSETS = ROOT / "assets"
+
+# Âmbar para erro — não existe como arquivo porque é um estado raro; os dois
+# principais (gravando e pausado) vêm dos PNGs gerados por scripts/make_icon.py.
 COLOR_ERROR = (190, 150, 40)
 
+_icon_cache: dict[str, Image.Image] = {}
 
-def _make_icon(color: tuple[int, int, int], *, paused: bool = False) -> Image.Image:
-    """Desenha o ícone: círculo cheio gravando, dois traços quando pausado."""
+
+def _make_icon(*, paused: bool = False, error: bool = False) -> Image.Image:
+    """Ícone da bandeja, lido de assets/ com fallback desenhado.
+
+    O fallback importa: sob PyInstaller o caminho de assets/ muda, e uma
+    bandeja sem ícone é pior que uma com ícone feio.
+    """
+    key = "error" if error else ("paused" if paused else "recording")
+    if key in _icon_cache:
+        return _icon_cache[key]
+
+    if not error:
+        path = ASSETS / ("tray-paused.png" if paused else "tray-recording.png")
+        if path.exists():
+            image = Image.open(path).convert("RGBA").resize((64, 64), Image.LANCZOS)
+            _icon_cache[key] = image
+            return image
+
     size = 64
     image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
+    color = COLOR_ERROR if error else ((120, 120, 124) if paused else (180, 95, 63))
     draw.ellipse([4, 4, size - 4, size - 4], fill=color)
-
     if paused:
-        # Símbolo de pausa vazado no meio do círculo.
-        draw.rectangle([22, 20, 29, 44], fill=(255, 255, 255, 230))
-        draw.rectangle([35, 20, 42, 44], fill=(255, 255, 255, 230))
-
+        draw.rectangle([22, 20, 29, 44], fill=(250, 249, 247))
+        draw.rectangle([35, 20, 42, 44], fill=(250, 249, 247))
+    _icon_cache[key] = image
     return image
 
 
@@ -87,10 +106,7 @@ class LifelogTray:
         if self._icon is None or self.runner is None:
             return
         paused = self.runner.is_paused
-        self._icon.icon = _make_icon(
-            COLOR_ERROR if self.error else (COLOR_PAUSED if paused else COLOR_RECORDING),
-            paused=paused,
-        )
+        self._icon.icon = _make_icon(paused=paused, error=bool(self.error))
         self._icon.title = f"Lifelog — {self._status_line()}"
 
     # ─────────────────────────────── ações ───────────────────────────────
@@ -118,6 +134,36 @@ class LifelogTray:
 
     # ─────────────────────────────── ciclo ───────────────────────────────
 
+    def _ensure_server(self) -> None:
+        """Sobe o servidor se ele não estiver respondendo.
+
+        No app empacotado a bandeja é o único processo que o usuário inicia —
+        sem isto, a captura encheria a fila local sem nunca conseguir enviar.
+        """
+        import httpx
+
+        url = self.runner.server_url if self.runner else "http://127.0.0.1:8000"
+        try:
+            if httpx.get(f"{url}/health", timeout=3).status_code == 200:
+                return
+        except Exception:
+            pass
+
+        exe = Path(sys.executable).parent / "LifelogServer.exe"
+        if not exe.exists():
+            log.info("servidor não encontrado em %s — inicie-o manualmente", exe)
+            return
+
+        log.info("iniciando o servidor…")
+        try:
+            subprocess.Popen(
+                [str(exe)],
+                cwd=str(exe.parent),
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except Exception:
+            log.exception("falha ao iniciar o servidor")
+
     def _boot(self, icon: pystray.Icon) -> None:
         """Sobe a captura depois que o ícone aparece.
 
@@ -125,6 +171,12 @@ class LifelogTray:
         antes do ícone deixaria a bandeja vazia nesse intervalo.
         """
         icon.visible = True
+
+        # Só no app empacotado: em desenvolvimento o servidor é iniciado à mão
+        # ou pela tarefa agendada, e subir outro criaria conflito de porta.
+        if getattr(sys, "frozen", False):
+            self._ensure_server()
+
         try:
             runner = CaptureRunner()
             if not runner.available:
@@ -157,7 +209,7 @@ class LifelogTray:
         )
 
         self._icon = pystray.Icon(
-            "lifelog", _make_icon(COLOR_PAUSED, paused=True), "Lifelog — iniciando…", menu
+            "lifelog", _make_icon(paused=True), "Lifelog — iniciando…", menu
         )
         self._icon.run(setup=self._boot)
         return 0

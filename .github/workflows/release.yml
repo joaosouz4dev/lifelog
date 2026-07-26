@@ -1,0 +1,161 @@
+name: Release
+
+# A cada push na main: auto-incrementa a versao (patch), roda os testes,
+# empacota com PyInstaller, gera o instalador e publica o release com o
+# Lifelog-Setup.exe. Comeca em 0.0.1 se nao houver tag.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:              # mudanca so de docs nao gera release
+      - "**.md"
+      - ".gitignore"
+      - "protocol/**"
+  workflow_dispatch: {}        # permite rodar manualmente tambem
+
+permissions:
+  contents: write              # criar tags e releases
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0       # precisa do historico p/ ler as tags
+
+      - name: Calcular proxima versao
+        id: ver
+        shell: pwsh
+        run: |
+          git fetch --tags --force
+          $last = git tag --list "v*" --sort=-v:refname | Select-Object -First 1
+          if (-not $last) {
+            $next = "0.0.1"
+          } else {
+            $p = $last.TrimStart("v").Split(".")
+            $next = "$($p[0]).$($p[1]).$([int]$p[2] + 1)"
+          }
+          "version=$next" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "tag=v$next"    | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Proxima versao: $next (anterior: $last)"
+
+      - name: Injetar versao no app
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          "__version__ = `"$v`"" | Out-File -FilePath server\_version.py -Encoding utf8
+          Write-Host "server/_version.py -> $v"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller pystray pycaw comtypes
+
+      - name: Rodar os testes (bloqueiam o release)
+        shell: pwsh
+        run: |
+          # A suite inteira. Cada arquivo trava bugs reais ja corrigidos:
+          #  - test_hub_chain: fallback, circuit breaker e teto de gasto (o teto
+          #    ignorava o custo previsto e estourava o limite em ~2x)
+          #  - test_ingest: trigger FTS5 corrompia o indice na 1a transcricao de
+          #    todo segmento; timestamps sem fuso caiam no dia errado
+          #  - test_resilience: PyAudio por thread derrubava o processo com
+          #    segfault no modo padrao; fila travada por ausencia longa
+          #    descartava audio legitimo
+          #  - test_classify / test_reports: serie do Netflix fora do relatorio,
+          #    reuniao com musica ao fundo dentro
+          python -m pytest tests/ -q
+          if ($LASTEXITCODE -ne 0) { throw "TESTES FALHARAM - release cancelado" }
+
+      - name: Gerar o icone
+        shell: pwsh
+        run: python scripts/make_icon.py
+
+      - name: Empacotar (PyInstaller)
+        shell: pwsh
+        run: python build.py
+
+      - name: Validar o bundle
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          # O servidor empacotado tem que subir e responder. Sem isto, um
+          # modulo faltando no bundle (uvicorn escolhe loop/protocolo por
+          # string, o PyInstaller nao ve) so apareceria na maquina do usuario.
+          $exe = "dist\Lifelog\LifelogServer.exe"
+          if (-not (Test-Path $exe)) { throw "servidor nao gerado: $exe" }
+
+          $p = Start-Process -FilePath $exe -PassThru
+          $ok = $false
+          foreach ($i in 1..30) {
+            Start-Sleep -Seconds 2
+            try {
+              $r = Invoke-WebRequest "http://127.0.0.1:8000/health" -TimeoutSec 3 -UseBasicParsing
+              if ($r.StatusCode -eq 200) { $ok = $true; break }
+            } catch { }
+          }
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          if (-not $ok) { throw "SELFCHECK FALHOU: o servidor empacotado nao respondeu" }
+          Write-Host "servidor empacotado respondeu OK"
+
+      - name: Instalar Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Gerar o instalador
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc "/DMyAppVersion=${{ steps.ver.outputs.version }}" installer\lifelog.iss
+          $setup = "installer\output\Lifelog-Setup-${{ steps.ver.outputs.version }}.exe"
+          if (-not (Test-Path $setup)) { throw "Instalador nao gerado: $setup" }
+          $mb = [math]::Round((Get-Item $setup).Length / 1MB)
+          Write-Host "instalador: $setup ($mb MB)"
+
+      - name: Publicar release
+        # A propria action cria a tag via API do GitHub. Nao usamos
+        # `git push origin <tag>` porque o GITHUB_TOKEN e bloqueado ao empurrar
+        # um ref cujo commit altera .github/workflows/* sem a permissao
+        # `workflows`. A API nao tem essa restricao.
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: Lifelog ${{ steps.ver.outputs.version }}
+          files: installer/output/Lifelog-Setup-${{ steps.ver.outputs.version }}.exe
+          body: |
+            ## Lifelog ${{ steps.ver.outputs.version }} — Diário de áudio com transcrição local
+
+            Grava o microfone e o áudio do sistema, transcreve tudo **no seu computador** e gera relatórios do seu dia.
+
+            ⬇️ Baixe o **Lifelog-Setup-${{ steps.ver.outputs.version }}.exe** abaixo e execute (Windows 10/11).
+
+            ### Como funciona
+            1. Instale e abra — o ícone aparece na bandeja.
+            2. A captura começa sozinha. Clique duplo no ícone para pausar.
+            3. Veja a timeline e os relatórios em **http://localhost:8000**.
+
+            ### Na primeira transcrição
+            O modelo de reconhecimento de fala (~3 GB) é baixado uma vez. Enquanto isso o áudio fica em fila e nada se perde.
+
+            ### Privacidade
+            O áudio e as transcrições ficam **apenas neste computador**. A transcrição roda localmente, sem enviar nada para a internet. Relatórios com IA são opcionais e desligados por padrão.
+
+            Gravar áudio do sistema captura vozes de terceiros em chamadas. Use com responsabilidade — o botão de pausa está sempre na bandeja.
+
+            ### Aviso do Windows SmartScreen
+            O instalador não é assinado digitalmente. Se aparecer "O Windows protegeu o seu PC":
+            **Mais informações → Executar assim mesmo**. O código é aberto e auditável.

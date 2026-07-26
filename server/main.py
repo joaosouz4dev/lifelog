@@ -162,7 +162,9 @@ def list_segments(
     if source is not None:
         sql += " AND ss.source = ?"
         params.append(source.value)
-    sql += " ORDER BY s.started_at LIMIT ?"
+    # Decrescente: o que acabou de ser falado é o que interessa ver primeiro,
+    # e com o LIMIT é o recorte recente que sobrevive num dia longo.
+    sql += " ORDER BY s.started_at DESC LIMIT ?"
     params.append(limit)
 
     rows = db.get_connection().execute(sql, params).fetchall()

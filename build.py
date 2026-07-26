@@ -40,6 +40,26 @@ HIDDEN_IMPORTS = [
     "pyaudiowpatch",
 ]
 
+# Pacotes que não fazem parte do Lifelog mas aparecem no Python do
+# desenvolvedor por causa de outros projetos. O hook do torch puxa o
+# tensorboard, que quebra o build com a versão de protobuf instalada — e nada
+# disso é usado aqui: a transcrição roda em CTranslate2, o VAD em ONNX.
+# Excluir também derruba centenas de MB do instalador.
+EXCLUDES = [
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "tensorboard",
+    "tensorflow",
+    "matplotlib",
+    "scipy",
+    "pandas",
+    "IPython",
+    "notebook",
+    "pytest",
+    "insightface",
+]
+
 # Arquivos que precisam viajar junto: a interface web, a configuração padrão,
 # os prompts dos relatórios e os ícones.
 DATAS = [
@@ -75,6 +95,8 @@ def pyinstaller_args(name: str, entry: str, *, windowed: bool) -> list[str]:
 
     for module in HIDDEN_IMPORTS:
         args += ["--hidden-import", module]
+    for module in EXCLUDES:
+        args += ["--exclude-module", module]
     # Caminho absoluto: com --specpath apontando para build/, o PyInstaller
     # resolve os --add-data relativos a partir de lá e não encontra nada.
     for src, dest in DATAS:

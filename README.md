@@ -29,7 +29,11 @@ Whisper; nada é enviado para a internet a menos que você configure.
 Baixe o instalador na [página de releases](https://github.com/joaosouz4dev/lifelog/releases/latest)
 e execute. O ícone aparece na bandeja e a captura começa sozinha.
 
-Abra **http://localhost:8000** para ver a timeline e os relatórios.
+Para ver a timeline e os relatórios, clique em **Abrir interface** no menu da
+bandeja — abre numa janela própria, sem navegador e sem digitar endereço.
+
+> Do celular ou de outro computador da rede, a interface também responde em
+> **http://localhost:8000** (troque `localhost` pelo IP deste PC).
 
 > Na primeira transcrição o modelo de reconhecimento de fala (~3 GB) é baixado
 > uma vez. Enquanto isso o áudio fica em fila e nada se perde.

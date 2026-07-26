@@ -182,27 +182,230 @@ function scheduleRefresh(delay) {
   }, delay);
 }
 
+// ───────────────────────────── relatórios ─────────────────────────────
+
+const reportListEl = $('#report-list');
+const reportBodyEl = $('#report-body');
+const feedbackEl = $('#gen-feedback');
+
+let activeReportId = null;
+
+/** Escapa antes de qualquer marcação — o texto vem de um LLM. */
+function escapeHTML(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+/**
+ * Markdown mínimo: títulos, listas, negrito, itálico e código.
+ * É o que os prompts de relatório produzem — um parser completo seria
+ * dependência externa, e a página roda sem acesso a CDN.
+ */
+function renderMarkdown(md) {
+  const html = [];
+  let inList = false;
+
+  const inline = (text) =>
+    escapeHTML(text)
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|\W)\*(?!\s)(.+?)(?<!\s)\*/g, '$1<em>$2</em>')
+      .replace(/`(.+?)`/g, '<code>$1</code>');
+
+  const closeList = () => {
+    if (inList) { html.push('</ul>'); inList = false; }
+  };
+
+  for (const raw of md.split('\n')) {
+    const line = raw.trimEnd();
+
+    const heading = line.match(/^(#{1,4})\s+(.*)$/);
+    if (heading) {
+      closeList();
+      const level = Math.min(heading[1].length, 3);
+      html.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+      continue;
+    }
+
+    const item = line.match(/^[-*]\s+(.*)$/);
+    if (item) {
+      if (!inList) { html.push('<ul>'); inList = true; }
+      html.push(`<li>${inline(item[1])}</li>`);
+      continue;
+    }
+
+    if (!line.trim()) { closeList(); continue; }
+
+    closeList();
+    html.push(`<p>${inline(line)}</p>`);
+  }
+
+  closeList();
+  return html.join('');
+}
+
+function reportLabel(report) {
+  const start = new Date(`${report.period_start}T00:00:00`);
+  if (report.type === 'monthly') {
+    return start.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  }
+  return start.toLocaleDateString('pt-BR', {
+    weekday: 'short', day: '2-digit', month: '2-digit',
+  });
+}
+
+async function loadReports() {
+  let reports;
+  try {
+    reports = await fetchJSON('/api/reports');
+  } catch {
+    reportListEl.innerHTML = '<p class="empty">Não foi possível carregar.</p>';
+    return;
+  }
+
+  if (!reports.length) {
+    reportListEl.replaceChildren();
+    reportBodyEl.innerHTML =
+      '<p class="empty">Nenhum relatório ainda.<br>' +
+      '<small>Use os botões acima para gerar o primeiro.</small></p>';
+    return;
+  }
+
+  reportListEl.replaceChildren();
+  for (const report of reports) {
+    const button = document.createElement('button');
+    button.className = 'report-item';
+    button.type = 'button';
+    button.dataset.id = report.id;
+    if (report.id === activeReportId) button.classList.add('is-active');
+    button.innerHTML =
+      `${escapeHTML(reportLabel(report))}` +
+      `<span class="meta">${report.type === 'monthly' ? 'mensal' : 'diário'}` +
+      `${report.cost_cents ? ` · ${report.cost_cents.toFixed(1)}¢` : ''}</span>`;
+    button.addEventListener('click', () => openReport(report.id));
+    reportListEl.appendChild(button);
+  }
+
+  if (activeReportId === null) openReport(reports[0].id);
+}
+
+async function openReport(id) {
+  activeReportId = id;
+  for (const item of reportListEl.querySelectorAll('.report-item')) {
+    item.classList.toggle('is-active', Number(item.dataset.id) === id);
+  }
+
+  reportBodyEl.innerHTML = '<p class="empty">Carregando…</p>';
+  try {
+    const report = await fetchJSON(`/api/reports/${id}`);
+    const generated = new Date(report.generated_at.replace(' ', 'T'));
+    reportBodyEl.innerHTML =
+      renderMarkdown(report.content_md) +
+      `<footer class="report-footer">Gerado por ${escapeHTML(report.llm_provider || '?')} ` +
+      `em ${generated.toLocaleString('pt-BR')} · ` +
+      `${report.tokens_in.toLocaleString('pt-BR')} tokens de entrada · ` +
+      `${report.cost_cents.toFixed(2)} centavos</footer>`;
+  } catch {
+    reportBodyEl.innerHTML = '<p class="empty">Não foi possível abrir este relatório.</p>';
+  }
+}
+
+async function generateReport(kind, button) {
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Gerando…';
+  feedbackEl.textContent = 'Pode levar um minuto.';
+  feedbackEl.className = 'feedback';
+
+  try {
+    const response = await fetch(`/api/reports/${kind}`, { method: 'POST' });
+    const body = await response.json();
+
+    if (!response.ok) {
+      // O servidor devolve o motivo real (sem material, sem provedor, teto
+      // de gasto) — mostrar isso é mais útil que "erro ao gerar".
+      feedbackEl.textContent = body.detail || `Falhou (HTTP ${response.status})`;
+      feedbackEl.className = 'feedback error';
+      return;
+    }
+
+    feedbackEl.textContent = `Pronto — ${body.provider}, ${body.cost_cents.toFixed(2)}¢`;
+    feedbackEl.className = 'feedback success';
+    activeReportId = body.id;
+    await loadReports();
+    await openReport(body.id);
+  } catch (err) {
+    feedbackEl.textContent = 'Servidor indisponível.';
+    feedbackEl.className = 'feedback error';
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+// ────────────────────────────── navegação ──────────────────────────────
+
+function switchView(view) {
+  for (const tab of document.querySelectorAll('.tab')) {
+    tab.classList.toggle('is-active', tab.dataset.view === view);
+  }
+  $('#view-timeline').hidden = view !== 'timeline';
+  $('#view-reports').hidden = view !== 'reports';
+
+  // Data e busca só fazem sentido na timeline.
+  dayPicker.hidden = view !== 'timeline';
+  searchBox.hidden = view !== 'timeline';
+  statsEl.hidden = view !== 'timeline';
+
+  if (view === 'reports') {
+    clearTimeout(refreshTimer);
+    loadReports();
+  } else {
+    loadDay(dayPicker.value);
+  }
+}
+
+function renderHubSection(title, hub) {
+  if (!hub) return `<h3>${title}</h3><p><small>indisponível</small></p>`;
+
+  const rows = hub.providers.map((p) => {
+    const state = p.circuit_open ? 'circuito aberto'
+      : p.available ? 'disponível' : 'indisponível';
+    const cls = p.available && !p.circuit_open ? 'up' : 'down';
+    return `<div class="provider"><span>${escapeHTML(p.name)}</span>
+            <span class="dot ${cls}">● ${state}</span></div>`;
+  }).join('');
+
+  const budget = hub.daily_budget_cents
+    ? `${hub.spent_today_cents.toFixed(2)} de ${hub.daily_budget_cents.toFixed(2)} centavos hoje`
+    : 'sem teto configurado';
+
+  return `<h3>${title}</h3>
+          <p><small>ordem: ${escapeHTML(hub.chain.join(' → ')) || '(nenhum provedor ativo)'}</small></p>
+          ${rows || '<p><small>nada configurado</small></p>'}
+          <p><small>Gasto: ${budget}</small></p>`;
+}
+
 async function showHub() {
   const body = $('#hub-body');
   body.textContent = 'carregando…';
   hubDialog.showModal();
-  try {
-    const hub = await fetchJSON('/api/hub/stt');
-    const rows = hub.providers.map((p) => {
-      const state = p.circuit_open ? 'circuito aberto'
-        : p.available ? 'disponível' : 'indisponível';
-      const cls = p.available && !p.circuit_open ? 'up' : 'down';
-      return `<div class="provider"><span>${p.name}</span>
-              <span class="dot ${cls}">● ${state}</span></div>`;
-    }).join('');
-    const budget = hub.daily_budget_cents
-      ? `${hub.spent_today_cents.toFixed(2)} de ${hub.daily_budget_cents.toFixed(2)} centavos hoje`
-      : 'sem teto configurado';
-    body.innerHTML = `<p><small>ordem: ${hub.chain.join(' → ') || '(vazia)'}</small></p>
-                      ${rows}<p><small>Gasto: ${budget}</small></p>`;
-  } catch {
-    body.textContent = 'não foi possível ler o status do hub.';
+
+  // Os dois hubs são independentes, inclusive nos tetos de gasto — mostrar
+  // só o de transcrição esconderia metade do custo.
+  const [stt, llm] = await Promise.all([
+    fetchJSON('/api/hub/stt').catch(() => null),
+    fetchJSON('/api/hub/llm').catch(() => null),
+  ]);
+
+  if (!stt && !llm) {
+    body.textContent = 'não foi possível ler o status dos provedores.';
+    return;
   }
+
+  body.innerHTML =
+    renderHubSection('Transcrição', stt) +
+    renderHubSection('Relatórios e chat', llm);
 }
 
 // ──────────────────────────────── eventos ────────────────────────────────
@@ -224,10 +427,17 @@ searchBox.addEventListener('input', () => {
 
 $('#hub-btn').addEventListener('click', showHub);
 
+for (const tab of document.querySelectorAll('.tab')) {
+  tab.addEventListener('click', () => switchView(tab.dataset.view));
+}
+
+$('#gen-daily').addEventListener('click', (e) => generateReport('daily', e.target));
+$('#gen-monthly').addEventListener('click', (e) => generateReport('monthly', e.target));
+
 // Pausa o polling quando a aba está oculta — não faz sentido no celular no bolso.
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) clearTimeout(refreshTimer);
-  else loadDay(dayPicker.value);
+  else if (!$('#view-timeline').hidden) loadDay(dayPicker.value);
 });
 
 loadDay(dayPicker.value);

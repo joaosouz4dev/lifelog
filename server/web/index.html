@@ -10,24 +10,46 @@
 <header>
   <h1>Lifelog</h1>
   <nav>
+    <div class="tabs" role="tablist">
+      <button class="tab is-active" data-view="timeline" role="tab">Timeline</button>
+      <button class="tab" data-view="reports" role="tab">Relatórios</button>
+    </div>
     <input type="date" id="day-picker" aria-label="Escolher dia">
     <input type="search" id="search-box" placeholder="Buscar na transcrição…" aria-label="Buscar">
-    <button id="hub-btn" type="button" title="Status dos provedores">Hub</button>
+    <button id="hub-btn" type="button" title="Provedores e custos">Hub</button>
   </nav>
 </header>
 
 <section id="stats" class="stats" aria-live="polite"></section>
 
 <main>
-  <div id="timeline" class="timeline"></div>
-  <p id="empty" class="empty" hidden>
-    Nenhum segmento neste dia.<br>
-    <small>Rode <code>python windows-client/main.py</code> para começar a capturar.</small>
-  </p>
+  <!-- Timeline -->
+  <div id="view-timeline">
+    <div id="timeline" class="timeline"></div>
+    <p id="empty" class="empty" hidden>
+      Nenhum segmento neste dia.<br>
+      <small>Suba a captura com <code>python windows-client/tray.py</code>.</small>
+    </p>
+  </div>
+
+  <!-- Relatórios -->
+  <div id="view-reports" hidden>
+    <div class="report-actions">
+      <button id="gen-daily" type="button">Gerar relatório de ontem</button>
+      <button id="gen-monthly" type="button">Gerar relatório do mês passado</button>
+      <span id="gen-feedback" class="feedback" aria-live="polite"></span>
+    </div>
+    <div class="report-layout">
+      <aside id="report-list" class="report-list"></aside>
+      <article id="report-body" class="report-body">
+        <p class="empty">Escolha um relatório à esquerda.</p>
+      </article>
+    </div>
+  </div>
 </main>
 
 <dialog id="hub-dialog">
-  <h2>Hub de transcrição</h2>
+  <h2>Provedores</h2>
   <div id="hub-body"></div>
   <form method="dialog"><button>Fechar</button></form>
 </dialog>

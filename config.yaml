@@ -58,7 +58,9 @@ stt:
 # Mesma mecânica do hub de STT: cadeia com fallback, circuit breaker e teto.
 # ─────────────────────────────────────────────────────────────
 llm:
-  chain: [claude, ollama]
+  # `echo` fica por último: não usa modelo nenhum, só organiza a transcrição.
+  # Garante que sempre haja um relatório, mesmo sem chave nem Ollama.
+  chain: [claude, ollama, echo]
 
   # ~R$0,30/dia. Um relatório diário custa poucos centavos com sonnet-5.
   daily_budget_cents: 500
@@ -83,6 +85,11 @@ llm:
       enabled: false          # ative se tiver Ollama rodando
       base_url: http://localhost:11434
       model: qwen2.5:14b
+
+    # Sem modelo de linguagem: devolve a transcrição organizada por hora.
+    # Não resume nem interpreta — é a rede de segurança da cadeia.
+    echo:
+      type: echo
 
 # ─────────────────────────────────────────────────────────────
 # Captura (lido pelos clientes)

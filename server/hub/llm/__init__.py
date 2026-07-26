@@ -12,6 +12,7 @@ from typing import Any
 from ...config import Config
 from ..chain import ProviderChain
 from .anthropic_provider import AnthropicProvider
+from .echo_provider import EchoProvider
 from .ollama_provider import OllamaProvider
 
 log = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ log = logging.getLogger(__name__)
 _REGISTRY: dict[str, Any] = {
     "anthropic": AnthropicProvider,
     "ollama": OllamaProvider,
+    "echo": EchoProvider,
 }
 
 
@@ -63,4 +65,4 @@ def build_llm_chain(cfg: Config) -> ProviderChain:
     )
 
 
-__all__ = ["AnthropicProvider", "OllamaProvider", "build_llm_chain"]
+__all__ = ["AnthropicProvider", "EchoProvider", "OllamaProvider", "build_llm_chain"]

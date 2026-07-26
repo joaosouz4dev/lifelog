@@ -32,7 +32,34 @@ def _already_running(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
+def _selfcheck(script: str) -> int:
+    """Roda um script dentro do bundle e devolve o código de saída.
+
+    O executável empacotado não expõe um interpretador, e sem isso não há como
+    verificar de fora se um módulo entrou no bundle. É como o CI confere que a
+    cadeia de transcrição está completa antes de publicar.
+    """
+    import runpy
+
+    try:
+        runpy.run_path(script, run_name="__main__")
+    except SystemExit as exc:
+        return int(exc.code or 0)
+    except Exception:
+        import traceback
+
+        traceback.print_exc()
+        return 1
+    return 0
+
+
 def main() -> int:
+    import os
+
+    probe = os.environ.get("LIFELOG_SELFCHECK")
+    if probe:
+        return _selfcheck(probe)
+
     import uvicorn
 
     from server.config import get_config

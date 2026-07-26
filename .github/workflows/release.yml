@@ -132,6 +132,44 @@ jobs:
           if (-not $ok) { throw "SELFCHECK FALHOU: o servidor empacotado nao respondeu" }
           Write-Host "servidor empacotado respondeu OK"
 
+      - name: Validar a cadeia de transcricao no bundle
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          # Subir e responder /health nao prova que transcreve: a v0.0.4 passou
+          # nesse teste e falhava em TODA transcricao por falta de `requests`,
+          # que so e importado quando o modelo carrega. Aqui importamos a
+          # cadeia inteira DENTRO do bundle, sem baixar modelo nem abrir audio.
+          $exe = "dist\Lifelog\LifelogServer.exe"
+          $probe = "$env:RUNNER_TEMP\probe.py"
+          @'
+          import importlib, sys
+          faltando = []
+          for mod in ("requests", "urllib3", "certifi", "huggingface_hub",
+                      "faster_whisper", "ctranslate2", "tokenizers",
+                      "onnxruntime", "pycaw", "comtypes"):
+              try:
+                  importlib.import_module(mod)
+              except Exception as exc:
+                  faltando.append(f"{mod}: {exc}")
+          if faltando:
+              print("MODULOS FALTANDO NO BUNDLE:")
+              for f in faltando:
+                  print("  " + f)
+              sys.exit(1)
+          print("cadeia de transcricao completa no bundle")
+          '@ | Out-File -FilePath $probe -Encoding utf8
+
+          # O bundle nao expoe um interpretador; roda o probe pelo proprio
+          # servidor via variavel de ambiente que o run_server entende.
+          $env:LIFELOG_SELFCHECK = $probe
+          $p = Start-Process -FilePath $exe -PassThru -Wait `
+                 -RedirectStandardOutput "$env:RUNNER_TEMP\probe-out.txt" `
+                 -RedirectStandardError "$env:RUNNER_TEMP\probe-err.txt"
+          Get-Content "$env:RUNNER_TEMP\probe-out.txt" -ErrorAction SilentlyContinue
+          Get-Content "$env:RUNNER_TEMP\probe-err.txt" -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0) { throw "SELFCHECK FALHOU: modulo faltando no bundle" }
+
       - name: Instalar Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress -y

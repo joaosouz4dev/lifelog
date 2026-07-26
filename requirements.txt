@@ -9,6 +9,10 @@ httpx==0.28.1
 
 # Transcrição local
 faster-whisper==1.1.1
+# huggingface_hub/hub.py importa requests para baixar o modelo. Não vem como
+# dependência declarada de ninguém, então no bundle do PyInstaller faltava e
+# TODA transcrição falhava com "No module named 'requests'".
+requests>=2.31
 
 # VAD
 onnxruntime==1.20.1

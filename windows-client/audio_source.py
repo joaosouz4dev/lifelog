@@ -25,6 +25,16 @@ SILENCE_THRESHOLD = 0.0015
 # não muda nessa escala.
 CACHE_SECONDS = 1.5
 
+# O próprio capturador aparece na lista de sessões de áudio porque tem o
+# loopback aberto. Rotular um segmento com o nome do Lifelog não diz nada
+# sobre a origem — e no app empacotado os nomes mudam para Lifelog.exe.
+SELF_PROCESSES = frozenset({
+    "python.exe",
+    "pythonw.exe",
+    "lifelog.exe",
+    "lifelogserver.exe",
+})
+
 
 @dataclass(frozen=True)
 class ActiveApp:
@@ -102,7 +112,7 @@ class AudioSourceProbe:
         """
         apps = self.active_apps()
         if exclude_self:
-            apps = [a for a in apps if a.process not in ("python.exe", "pythonw.exe")]
+            apps = [a for a in apps if a.process not in SELF_PROCESSES]
         return apps[0].process if apps else None
 
     def snapshot(self) -> str | None:
@@ -112,8 +122,7 @@ class AudioSourceProbe:
         classificação depois decide o que fazer com a combinação.
         """
         apps = [
-            a for a in self.active_apps()
-            if a.process not in ("python.exe", "pythonw.exe")
+            a for a in self.active_apps() if a.process not in SELF_PROCESSES
         ]
         if not apps:
             return None

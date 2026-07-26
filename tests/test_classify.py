@@ -74,6 +74,23 @@ def test_desconhecido_entra():
     assert is_report_worthy(Category.UNKNOWN) is True
 
 
+def test_o_proprio_capturador_nao_conta_como_origem():
+    """O Lifelog aparece nas sessões de áudio porque tem o loopback aberto.
+
+    Rotular um segmento com o nome do próprio app não diz nada sobre a origem
+    — e no executável empacotado o nome muda de pythonw.exe para Lifelog.exe,
+    que era o que passava pelo filtro antigo.
+    """
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "windows-client"))
+    from audio_source import SELF_PROCESSES
+
+    for nome in ("python.exe", "pythonw.exe", "lifelog.exe", "lifelogserver.exe"):
+        assert nome in SELF_PROCESSES, f"{nome} deveria ser ignorado como origem"
+
+
 def test_rotulos_em_portugues():
     assert label(Category.ENTERTAINMENT) == "entretenimento"
     assert label(Category.CONVERSATION) == "conversa"

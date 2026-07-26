@@ -53,9 +53,27 @@ HIDDEN_IMPORTS = [
     "faster_whisper",
     "ctranslate2",
     "onnxruntime",
+    # O faster_whisper baixa o modelo do HuggingFace na primeira transcrição e
+    # usa estes por dentro. Sem eles o bundle sobe, aceita áudio e falha em
+    # toda transcrição com "No module named 'requests'".
+    "requests",
+    "urllib3",
+    "certifi",
+    "charset_normalizer",
+    "idna",
+    "huggingface_hub",
+    "tokenizers",
+    "tqdm",
+    "filelock",
+    "fsspec",
+    "packaging",
+    "yaml",
     "pycaw",
     "comtypes",
     "pyaudiowpatch",
+    "win32event",
+    "win32api",
+    "winerror",
 ]
 
 # Pacotes que não fazem parte do Lifelog mas aparecem no Python do
@@ -119,6 +137,12 @@ def pyinstaller_args(name: str, entry: str, *, windowed: bool) -> list[str]:
     # Varre o pacote inteiro em vez de depender da lista acima ficar completa:
     # um módulo novo em server/ passaria despercebido até alguém rodar o .exe.
     args += ["--collect-submodules", "server"]
+
+    # Estes carregam submódulos e arquivos de dados por caminho em runtime, o
+    # que o PyInstaller não enxerga. Listar hidden-imports um a um já falhou
+    # (faltou `requests` e toda transcrição quebrou); --collect-all pega tudo.
+    for pkg in ("faster_whisper", "huggingface_hub", "requests", "certifi", "tokenizers"):
+        args += ["--collect-all", pkg]
     # Caminho absoluto: com --specpath apontando para build/, o PyInstaller
     # resolve os --add-data relativos a partir de lá e não encontra nada.
     for src, dest in DATAS:

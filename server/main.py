@@ -14,7 +14,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import db, reports
+from . import chat, db, reports
 from .classify import classify_app
 from .config import get_config
 from .hub.base import BudgetExceeded, ProviderError
@@ -333,6 +333,23 @@ async def create_monthly_report(month: str | None = None) -> dict:
         return await reports.generate_monthly(llm_chain, year, mon)
     except reports.NoMaterial as exc:
         raise HTTPException(404, str(exc)) from exc
+    except BudgetExceeded as exc:
+        raise HTTPException(429, str(exc)) from exc
+    except ProviderError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+@app.post("/api/chat")
+async def chat_endpoint(body: dict) -> dict:
+    """Responde uma pergunta sobre o que foi dito, citando as fontes."""
+    question = (body.get("question") or "").strip()
+    if not question:
+        raise HTTPException(422, "pergunta vazia")
+    if llm_chain is None:
+        raise HTTPException(503, "hub de LLM não inicializado")
+
+    try:
+        return await chat.answer(llm_chain, question)
     except BudgetExceeded as exc:
         raise HTTPException(429, str(exc)) from exc
     except ProviderError as exc:

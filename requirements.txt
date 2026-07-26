@@ -19,6 +19,12 @@ soundfile==0.13.0
 
 # Captura no Windows (só o cliente precisa)
 PyAudioWPatch==0.2.12.7; sys_platform == "win32"
+pystray==0.19.5; sys_platform == "win32"
+pycaw==20240210; sys_platform == "win32"
+comtypes==1.4.8; sys_platform == "win32"
+# pywin32 dá o mutex nomeado que impede duas capturas simultâneas —
+# duas bandejas disputam o mesmo dispositivo de áudio e a mesma fila.
+pywin32==308; sys_platform == "win32"
 
 # Testes
 pytest==8.3.4

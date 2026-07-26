@@ -13,6 +13,7 @@
     <div class="tabs" role="tablist">
       <button class="tab is-active" data-view="timeline" role="tab">Timeline</button>
       <button class="tab" data-view="reports" role="tab">Relatórios</button>
+      <button class="tab" data-view="chat" role="tab">Chat</button>
     </div>
     <input type="date" id="day-picker" aria-label="Escolher dia">
     <input type="search" id="search-box" placeholder="Buscar na transcrição…" aria-label="Buscar">
@@ -27,9 +28,24 @@
   <div id="view-timeline">
     <div id="timeline" class="timeline"></div>
     <p id="empty" class="empty" hidden>
-      Nenhum segmento neste dia.<br>
-      <small>Suba a captura com <code>python windows-client/tray.py</code>.</small>
+      Nada capturado neste dia.<br>
+      <small id="empty-hint">A captura roda sozinha — verifique o ícone do Lifelog na bandeja.</small>
     </p>
+  </div>
+
+  <!-- Chat -->
+  <div id="view-chat" hidden>
+    <div id="chat-log" class="chat-log">
+      <p class="empty">
+        Pergunte sobre o que você falou ou ouviu.<br>
+        <small>Ex.: "o que eu falei sobre o orçamento?" · "o que aconteceu ontem?"</small>
+      </p>
+    </div>
+    <form id="chat-form" class="chat-form">
+      <input type="text" id="chat-input" placeholder="Pergunte sobre suas conversas…"
+             autocomplete="off" aria-label="Pergunta">
+      <button type="submit" id="chat-send">Perguntar</button>
+    </form>
   </div>
 
   <!-- Relatórios -->

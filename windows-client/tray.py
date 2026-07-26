@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import pystray  # noqa: E402
 from PIL import Image, ImageDraw  # noqa: E402
 
+import single_instance  # noqa: E402
 from runner import CaptureRunner  # noqa: E402
 
 log = logging.getLogger("tray")
@@ -221,7 +222,34 @@ def main() -> int:
         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
-    return LifelogTray().run()
+
+    # Duas bandejas disputam o mesmo dispositivo de áudio e a mesma fila —
+    # o resultado parece "não está capturando". Sair é melhor que competir.
+    if not single_instance.acquire():
+        log.info("o Lifelog já está rodando — veja o ícone na bandeja")
+        _warn_already_running()
+        return 0
+
+    try:
+        return LifelogTray().run()
+    finally:
+        single_instance.release()
+
+
+def _warn_already_running() -> None:
+    """Avisa que já há uma instância — sem isto, abrir o app não faz nada."""
+    try:
+        import ctypes
+
+        ctypes.windll.user32.MessageBoxW(
+            None,
+            "O Lifelog já está em execução.\n\n"
+            "Procure o ícone na bandeja, ao lado do relógio.",
+            "Lifelog",
+            0x40,  # MB_ICONINFORMATION
+        )
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

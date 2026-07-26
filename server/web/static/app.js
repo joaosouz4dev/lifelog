@@ -193,6 +193,111 @@ function scheduleRefresh(delay) {
   }, delay);
 }
 
+// ──────────────────────────────── chat ────────────────────────────────
+
+const chatLog = $('#chat-log');
+const chatInput = $('#chat-input');
+const chatForm = $('#chat-form');
+
+let chatBusy = false;
+
+/**
+ * Converte as citações [1] em botões que destacam o trecho correspondente.
+ * Sem isso, o número não teria como ser verificado — que é o ponto de citar.
+ */
+function renderAnswer(text) {
+  return escapeHTML(text)
+    .replace(/\[(\d+)\]/g, '<button class="cite" data-n="$1">$1</button>')
+    .split(/\n{2,}/)
+    .map((p) => `<p>${p.replace(/\n/g, '<br>')}</p>`)
+    .join('');
+}
+
+function renderSources(sources) {
+  if (!sources.length) return '';
+  const items = sources.map((s) => {
+    const when = new Date(s.started_at);
+    const origem = SOURCE_LABEL[s.source] || s.source;
+    return `<div class="chat-source" data-n="${s.n}">
+      <span class="n">${s.n}</span>
+      <span>
+        <span class="when">${when.toLocaleString('pt-BR', {
+          day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+        })} · ${origem}</span>
+        ${escapeHTML(s.text)}
+      </span>
+    </div>`;
+  }).join('');
+
+  return `<details class="chat-sources">
+    <summary>${sources.length} trecho(s) usados</summary>${items}</details>`;
+}
+
+async function askChat(question) {
+  if (chatBusy) return;
+  chatBusy = true;
+  chatInput.value = '';
+
+  // Primeira pergunta substitui o texto de ajuda.
+  const placeholder = chatLog.querySelector('.empty');
+  if (placeholder) placeholder.remove();
+
+  const turn = document.createElement('div');
+  turn.className = 'chat-turn';
+  turn.innerHTML =
+    `<div class="chat-question">${escapeHTML(question)}</div>` +
+    `<div class="chat-answer chat-thinking">Procurando na transcrição…</div>`;
+  chatLog.appendChild(turn);
+  chatLog.scrollTop = chatLog.scrollHeight;
+
+  const answerEl = turn.querySelector('.chat-answer');
+
+  try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ question }),
+    });
+    const body = await response.json();
+
+    if (!response.ok) {
+      // O servidor diz o motivo real (sem provedor, teto de gasto); mostrar
+      // isso é mais útil que "erro ao perguntar".
+      answerEl.classList.remove('chat-thinking');
+      answerEl.innerHTML = `<p>${escapeHTML(body.detail || `Falhou (HTTP ${response.status})`)}</p>`;
+      return;
+    }
+
+    answerEl.classList.remove('chat-thinking');
+    answerEl.innerHTML =
+      renderAnswer(body.answer) +
+      renderSources(body.sources || []) +
+      (body.provider
+        ? `<div class="chat-meta">${escapeHTML(body.provider)}` +
+          `${body.cost_cents ? ` · ${body.cost_cents.toFixed(2)}¢` : ''}</div>`
+        : '');
+
+    // Clicar na citação abre as fontes e destaca o trecho citado.
+    for (const cite of answerEl.querySelectorAll('.cite')) {
+      cite.addEventListener('click', () => {
+        const details = answerEl.querySelector('.chat-sources');
+        if (details) details.open = true;
+        for (const src of answerEl.querySelectorAll('.chat-source')) {
+          src.classList.toggle('is-target', src.dataset.n === cite.dataset.n);
+        }
+        answerEl.querySelector(`.chat-source[data-n="${cite.dataset.n}"]`)
+          ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      });
+    }
+  } catch {
+    answerEl.classList.remove('chat-thinking');
+    answerEl.innerHTML = '<p>Servidor indisponível.</p>';
+  } finally {
+    chatBusy = false;
+    chatLog.scrollTop = chatLog.scrollHeight;
+  }
+}
+
 // ───────────────────────────── relatórios ─────────────────────────────
 
 const reportListEl = $('#report-list');
@@ -362,6 +467,7 @@ function switchView(view) {
   }
   $('#view-timeline').hidden = view !== 'timeline';
   $('#view-reports').hidden = view !== 'reports';
+  $('#view-chat').hidden = view !== 'chat';
 
   // Data e busca só fazem sentido na timeline.
   dayPicker.hidden = view !== 'timeline';
@@ -371,6 +477,9 @@ function switchView(view) {
   if (view === 'reports') {
     clearTimeout(refreshTimer);
     loadReports();
+  } else if (view === 'chat') {
+    clearTimeout(refreshTimer);
+    chatInput.focus();
   } else {
     loadDay(dayPicker.value);
   }
@@ -444,6 +553,12 @@ for (const tab of document.querySelectorAll('.tab')) {
 
 $('#gen-daily').addEventListener('click', (e) => generateReport('daily', e.target));
 $('#gen-monthly').addEventListener('click', (e) => generateReport('monthly', e.target));
+
+chatForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const question = chatInput.value.trim();
+  if (question) askChat(question);
+});
 
 // Pausa o polling quando a aba está oculta — não faz sentido no celular no bolso.
 document.addEventListener('visibilitychange', () => {

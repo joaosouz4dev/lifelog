@@ -19,6 +19,19 @@ if not getattr(sys, "frozen", False):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
+def _already_running(port: int) -> bool:
+    """Já existe um servidor atendendo nesta porta?
+
+    Dois servidores no mesmo SQLite disputam a escrita e o segundo nem
+    conseguiria abrir a porta — melhor sair limpo do que estourar.
+    """
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(1.5)
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
 def main() -> int:
     import uvicorn
 
@@ -33,6 +46,10 @@ def main() -> int:
     cfg = get_config()
     host = cfg.get("server.host", "0.0.0.0")
     port = int(cfg.get("server.port", 8000))
+
+    if _already_running(port):
+        print(f"já existe um servidor na porta {port}; nada a fazer")
+        return 0
 
     # Log em arquivo: sob pythonw (e no .exe empacotado) não há console para
     # onde escrever, e sem isso qualquer falha de inicialização é invisível.

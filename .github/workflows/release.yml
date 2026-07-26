@@ -98,15 +98,36 @@ jobs:
           $exe = "dist\Lifelog\LifelogServer.exe"
           if (-not (Test-Path $exe)) { throw "servidor nao gerado: $exe" }
 
-          $p = Start-Process -FilePath $exe -PassThru
+          # Captura a saida: sem isto, um modulo faltando no bundle vira
+          # apenas "nao respondeu" e nao ha como saber qual era.
+          $out = "$env:RUNNER_TEMP\server-out.txt"
+          $err = "$env:RUNNER_TEMP\server-err.txt"
+          $p = Start-Process -FilePath $exe -PassThru `
+                 -RedirectStandardOutput $out -RedirectStandardError $err
+
           $ok = $false
-          foreach ($i in 1..30) {
+          foreach ($i in 1..45) {
             Start-Sleep -Seconds 2
+            if ($p.HasExited) {
+              Write-Host "o processo morreu apos $($i * 2)s (exit $($p.ExitCode))"
+              break
+            }
             try {
               $r = Invoke-WebRequest "http://127.0.0.1:8000/health" -TimeoutSec 3 -UseBasicParsing
               if ($r.StatusCode -eq 200) { $ok = $true; break }
             } catch { }
           }
+
+          if (-not $ok) {
+            Write-Host "--- stdout ---"
+            Get-Content $out -ErrorAction SilentlyContinue | Select-Object -Last 40
+            Write-Host "--- stderr ---"
+            Get-Content $err -ErrorAction SilentlyContinue | Select-Object -Last 40
+            Write-Host "--- log do app ---"
+            Get-Content "$env:LOCALAPPDATA\Lifelog\server.log" -ErrorAction SilentlyContinue |
+              Select-Object -Last 30
+          }
+
           Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
           if (-not $ok) { throw "SELFCHECK FALHOU: o servidor empacotado nao respondeu" }
           Write-Host "servidor empacotado respondeu OK"

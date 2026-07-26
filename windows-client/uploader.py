@@ -60,6 +60,15 @@ class Uploader(threading.Thread):
                     continue
 
                 if not batch:
+                    # Fila sem nada pronto, mas com itens travados: eles
+                    # esgotaram as tentativas contra um servidor que estava
+                    # fora do ar. Sondar o servidor é a única forma de saber
+                    # se voltou — nada será enviado enquanto ninguém os
+                    # reviver, e esperar por um 200 que nunca vem trava a fila
+                    # para sempre.
+                    if self.queue.stats()["stuck"] and self._server_is_back(client):
+                        self.queue.revive_stuck()
+                        continue
                     self._stopping.wait(self.poll_interval)
                     continue
 
@@ -67,6 +76,13 @@ class Uploader(threading.Thread):
                     if self._stopping.is_set():
                         break
                     self._send(client, segment)
+
+    def _server_is_back(self, client: httpx.Client) -> bool:
+        """O servidor responde? Sonda barata via /health."""
+        try:
+            return client.get(f"{self.server_url}/health", timeout=5).status_code == 200
+        except httpx.HTTPError:
+            return False
 
     def _send(self, client: httpx.Client, segment) -> None:
         if not segment.audio_path.exists():
@@ -107,6 +123,10 @@ class Uploader(threading.Thread):
                 offline_for = time.time() - self._offline_since
                 log.info("servidor de volta após %.0fs; drenando a fila", offline_for)
                 self._offline_since = None
+                # Uma ausência longa esgota as tentativas de quem estava na
+                # fila. Agora que o servidor responde, esses itens merecem
+                # outra chance — o motivo da falha era ele, não o payload.
+                self.queue.revive_stuck()
             self.queue.mark_sent(segment)
             self.sent_count += 1
             body = response.json()

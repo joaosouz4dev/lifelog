@@ -29,6 +29,13 @@ class _Handler(BaseHTTPRequestHandler):
     status = 200
     received: list[str] = []
 
+    def do_GET(self):  # noqa: N802
+        """Responde ao /health que o uploader usa para sondar reconexão."""
+        self.send_response(200)
+        self.send_header("content-type", "application/json")
+        self.end_headers()
+        self.wfile.write(b'{"status": "ok"}')
+
     def do_POST(self):  # noqa: N802
         length = int(self.headers.get("content-length", 0))
         self.rfile.read(length)
@@ -152,6 +159,46 @@ def test_fila_drena_quando_o_servidor_volta(queue, fake_server):
 
     assert online.sent_count == 4
     assert queue.stats()["pending"] == 0
+
+
+def test_fila_travada_por_ausencia_longa_sobe_quando_o_servidor_volta(queue, fake_server):
+    """Ficar offline tempo demais não pode custar o áudio já capturado.
+
+    MAX_ATTEMPTS existe para um payload que o servidor nunca aceitaria, mas o
+    mesmo contador é consumido por indisponibilidade. Sem revive_stuck(), um
+    cliente que passou horas sem rede descartaria fala legítima.
+    """
+    from buffer import MAX_ATTEMPTS
+
+    server, _ = fake_server
+    _fill(queue, 3)
+
+    # Servidor fora do ar tempo suficiente para esgotar as tentativas.
+    for _ in range(MAX_ATTEMPTS):
+        with queue._conn:
+            queue._conn.execute("UPDATE outbox SET next_try_at = 0")
+        for segment in queue.next_batch(limit=10):
+            queue.mark_failed(segment, "connection refused")
+
+    assert queue.next_batch(limit=10) == [], "os itens devem estar travados"
+    assert queue.stats()["stuck"] == 3
+
+    # Servidor volta: o uploader revive a fila ao ver a primeira resposta boa.
+    uploader = _drain(queue, f"http://127.0.0.1:{server.server_port}", timeout=15)
+
+    assert uploader.sent_count == 3, "os 3 segmentos travados devem subir"
+    assert queue.stats()["pending"] == 0
+
+
+def test_revive_stuck_nao_mexe_no_que_ainda_tem_tentativa(queue):
+    """Só os esgotados voltam — quem está em backoff normal fica como está."""
+    _fill(queue, 2)
+    segment = queue.next_batch()[0]
+    queue.mark_failed(segment, "erro temporário")
+
+    revived = queue.revive_stuck()
+
+    assert revived == 0, "nada esgotou ainda"
 
 
 def test_erro_definitivo_do_servidor_descarta_o_item(queue, fake_server):

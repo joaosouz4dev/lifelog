@@ -130,6 +130,27 @@ class SegmentQueue:
             for r in rows
         ]
 
+    def revive_stuck(self) -> int:
+        """Zera o contador dos itens que esgotaram as tentativas.
+
+        `MAX_ATTEMPTS` protege contra um payload que o servidor nunca vai
+        aceitar, mas o mesmo contador também é consumido por indisponibilidade
+        — um cliente que passou horas offline esgota as tentativas e passaria a
+        descartar áudio legítimo. Chamado quando o servidor volta a responder,
+        para que a fila retomada suba inteira.
+        """
+        with self._conn:
+            cursor = self._conn.execute(
+                """
+                UPDATE outbox SET attempts = 0, next_try_at = 0
+                 WHERE attempts >= ?
+                """,
+                (MAX_ATTEMPTS,),
+            )
+        if cursor.rowcount:
+            log.info("%s segmentos travados voltaram para a fila", cursor.rowcount)
+        return cursor.rowcount
+
     def mark_sent(self, segment: QueuedSegment, *, keep_audio: bool = False) -> None:
         """Remove da fila. O servidor já tem o áudio; a cópia local não é necessária."""
         with self._conn:

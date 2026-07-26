@@ -20,6 +20,10 @@ _db_path: Path | None = None
 
 
 def _m001_initial(conn: sqlite3.Connection) -> None:
+    # Todo timestamp é gravado em HORA LOCAL, não UTC. `started_at` chega
+    # normalizado para local na ingestão, e as consultas por dia usam o dia
+    # local — misturar os dois faria o gasto diário zerar quando UTC vira o
+    # dia antes do fuso local (às 21h em UTC-3), liberando o dobro do teto.
     conn.executescript("""
         -- Uma sessão é um período contínuo de captura de uma fonte.
         CREATE TABLE sessions (
@@ -29,7 +33,7 @@ def _m001_initial(conn: sqlite3.Connection) -> None:
             started_at   TEXT    NOT NULL,
             ended_at     TEXT,
             app_name     TEXT,
-            created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+            created_at   TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
         );
         CREATE INDEX idx_sessions_started ON sessions(started_at);
         CREATE INDEX idx_sessions_device  ON sessions(device_id, started_at);
@@ -52,7 +56,7 @@ def _m001_initial(conn: sqlite3.Connection) -> None:
             status        TEXT    NOT NULL DEFAULT 'pending',
             error         TEXT,
             attempts      INTEGER NOT NULL DEFAULT 0,
-            created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+            created_at    TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
             transcribed_at TEXT
         );
         -- client_uid torna o /ingest idempotente: reenvio após timeout não duplica.
@@ -100,7 +104,7 @@ def _m001_initial(conn: sqlite3.Connection) -> None:
             tokens_in    INTEGER NOT NULL DEFAULT 0,
             tokens_out   INTEGER NOT NULL DEFAULT 0,
             cost_cents   REAL    NOT NULL DEFAULT 0,
-            generated_at TEXT    NOT NULL DEFAULT (datetime('now'))
+            generated_at TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
         );
         CREATE UNIQUE INDEX idx_reports_period ON reports(type, period_start);
 
@@ -111,7 +115,7 @@ def _m001_initial(conn: sqlite3.Connection) -> None:
             type         TEXT    NOT NULL,
             payload_json TEXT    NOT NULL,
             status       TEXT    NOT NULL DEFAULT 'detected',
-            created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+            created_at   TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
         );
         CREATE INDEX idx_intents_status ON intents(status, created_at);
 
@@ -124,7 +128,7 @@ def _m001_initial(conn: sqlite3.Connection) -> None:
             cost_cents  REAL    NOT NULL DEFAULT 0,
             latency_ms  INTEGER,
             error       TEXT,
-            created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+            created_at  TEXT    NOT NULL DEFAULT (datetime('now', 'localtime'))
         );
         CREATE INDEX idx_usage_day ON provider_usage(created_at, hub);
     """)

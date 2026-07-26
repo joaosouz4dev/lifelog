@@ -94,11 +94,13 @@ class CaptureTrack(threading.Thread):
         self.vad = SileroVad(model_path, **vad_config)
         self.bitrate = bitrate
         self.paused = paused
-        self._stop = threading.Event()
+        # `_stopping`, não `_stop`: threading.Thread já tem um método _stop()
+        # interno, e sobrescrevê-lo com um Event faz join() estourar TypeError.
+        self._stopping = threading.Event()
         self.segments_captured = 0
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stopping.set()
 
     def run(self) -> None:
         import pyaudiowpatch as pyaudio
@@ -120,7 +122,7 @@ class CaptureTrack(threading.Thread):
             stream_start = datetime.now()
             was_paused = False
 
-            while not self._stop.is_set():
+            while not self._stopping.is_set():
                 if self.paused.is_set():
                     if not was_paused:
                         log.info("[%s] pausado", self.source)

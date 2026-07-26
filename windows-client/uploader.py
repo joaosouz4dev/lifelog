@@ -39,30 +39,32 @@ class Uploader(threading.Thread):
         self.device_id = device_id
         self.poll_interval = poll_interval
         self.timeout = timeout
-        self._stop = threading.Event()
+        # `_stopping`, não `_stop`: threading.Thread já tem um método _stop()
+        # interno, e sobrescrevê-lo com um Event faz join() estourar TypeError.
+        self._stopping = threading.Event()
         self.sent_count = 0
         self._offline_since: float | None = None
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stopping.set()
 
     def run(self) -> None:
         log.info("uploader apontando para %s", self.server_url)
         with httpx.Client(timeout=self.timeout) as client:
-            while not self._stop.is_set():
+            while not self._stopping.is_set():
                 try:
                     batch = self.queue.next_batch(limit=5)
                 except Exception:
                     log.exception("falha ao ler a fila")
-                    self._stop.wait(self.poll_interval)
+                    self._stopping.wait(self.poll_interval)
                     continue
 
                 if not batch:
-                    self._stop.wait(self.poll_interval)
+                    self._stopping.wait(self.poll_interval)
                     continue
 
                 for segment in batch:
-                    if self._stop.is_set():
+                    if self._stopping.is_set():
                         break
                     self._send(client, segment)
 

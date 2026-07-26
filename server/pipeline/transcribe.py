@@ -148,7 +148,7 @@ class TranscriptionWorker:
                 UPDATE segments
                    SET status = 'done', transcript = ?, language = ?, confidence = ?,
                        stt_provider = ?, cost_cents = ?, error = NULL,
-                       transcribed_at = datetime('now')
+                       transcribed_at = datetime('now', 'localtime')
                  WHERE id = ?
                 """,
                 (

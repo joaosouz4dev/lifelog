@@ -161,6 +161,32 @@ def test_uso_e_custo_sao_registrados(temp_db):
     assert chain.spent_today_cents() == 3.5
 
 
+def test_gasto_do_dia_usa_hora_local_e_nao_utc(temp_db):
+    """O teto não pode zerar quando UTC vira o dia antes do fuso local.
+
+    Em UTC-3, das 21h à meia-noite `date('now')` já é o dia seguinte enquanto
+    `date('now','localtime')` ainda é hoje. Se a gravação usar UTC e a soma
+    usar local (ou vice-versa), o gasto some da contagem e o teto libera o
+    dobro todas as noites.
+    """
+    from server import db
+
+    chain = _chain([FakeProvider("pago", cost=10.0)], daily_budget_cents=100.0)
+    asyncio.run(_run(chain))
+
+    conn = db.get_connection()
+    stored = conn.execute(
+        "SELECT created_at FROM provider_usage ORDER BY id DESC LIMIT 1"
+    ).fetchone()["created_at"]
+    local_now = conn.execute("SELECT datetime('now', 'localtime') AS t").fetchone()["t"]
+
+    # Mesmo dia local — é isto que a query de gasto enxerga.
+    assert stored[:10] == local_now[:10], (
+        f"created_at gravado como {stored}, mas o dia local é {local_now[:10]}"
+    )
+    assert chain.spent_today_cents() == 10.0
+
+
 def test_health_reporta_estado_dos_provedores(temp_db):
     chain = _chain([FakeProvider("ok"), FakeProvider("down", healthy=False)])
     health = asyncio.run(chain.health())

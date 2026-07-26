@@ -87,14 +87,24 @@ begin
   if CurUninstallStep = usPostUninstall then
   begin
     DataDir := ExpandConstant('{localappdata}\Lifelog');
-    if DirExists(DataDir) then
+    if not DirExists(DataDir) then
+      Exit;
+
+    // Em modo silencioso o MsgBox nao aparece: o Inno devolve o botao padrao
+    // (IDYES) sozinho, e as gravacoes sumiriam sem ninguem ter respondido
+    // nada. Numa desinstalacao sem interface, manter os dados e a unica
+    // escolha defensavel — apagar por engano nao tem desfazer.
+    if UninstallSilent then
     begin
-      if MsgBox(
-        'Apagar tambem as gravacoes, transcricoes e relatorios?' + #13#10#13#10 +
-        DataDir + #13#10#13#10 +
-        'Escolha Nao para manter os dados e poder reinstalar depois.',
-        mbConfirmation, MB_YESNO) = IDYES then
-        DelTree(DataDir, True, True, True);
+      Log('Desinstalacao silenciosa: dados preservados em ' + DataDir);
+      Exit;
     end;
+
+    if MsgBox(
+      'Apagar tambem as gravacoes, transcricoes e relatorios?' + #13#10#13#10 +
+      DataDir + #13#10#13#10 +
+      'Escolha Nao para manter os dados e poder reinstalar depois.',
+      mbConfirmation, MB_YESNO) = IDYES then
+      DelTree(DataDir, True, True, True);
   end;
 end;

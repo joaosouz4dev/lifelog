@@ -14,6 +14,7 @@ import argparse
 import logging
 import signal
 import socket
+import os
 import sys
 import threading
 import time
@@ -24,7 +25,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(ROOT))
 
 from buffer import SegmentQueue  # noqa: E402
-from capture import CaptureTrack, list_devices, resolve_device  # noqa: E402
+from capture import (  # noqa: E402
+    CaptureTrack, close_audio, list_devices, resolve_device,
+)
 from uploader import Uploader  # noqa: E402
 from vad import ensure_model  # noqa: E402
 
@@ -155,8 +158,14 @@ def main() -> int:
             captured, uploader.sent_count, stats["pending"],
         )
         queue.close()
+        close_audio()
 
-    return 0
+    # O CPython segfaulta ao descarregar a DLL do PortAudio enquanto threads
+    # WASAPI ainda finalizam por dentro — depois que todo o trabalho terminou
+    # e a fila já está no disco. os._exit sai sem rodar essa finalização.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
 
 
 if __name__ == "__main__":

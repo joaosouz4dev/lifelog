@@ -83,6 +83,37 @@ def _drain(q: SegmentQueue, url: str, *, timeout: float = 15.0) -> Uploader:
     return uploader
 
 
+def test_portaudio_e_uma_instancia_compartilhada():
+    """Uma PyAudio() por thread derruba o processo com segfault.
+
+    O modo padrão do cliente abre mic e system ao mesmo tempo; com uma
+    instância por trilha, o WASAPI mata o processo em segundos. Reproduzido
+    isoladamente com dois PyAudio() e dois streams, sem código do projeto.
+    """
+    pytest.importorskip("pyaudiowpatch", reason="só existe no Windows")
+
+    import capture
+
+    capture.close_audio()
+    try:
+        first = capture.get_audio()
+        second = capture.get_audio()
+        assert first is second, "get_audio() deve devolver sempre a mesma instância"
+    finally:
+        capture.close_audio()
+
+
+def test_close_audio_e_idempotente():
+    """Chamar duas vezes não pode estourar — o encerramento roda em finally."""
+    pytest.importorskip("pyaudiowpatch", reason="só existe no Windows")
+
+    import capture
+
+    capture.get_audio()
+    capture.close_audio()
+    capture.close_audio()  # não deve levantar
+
+
 def test_envia_a_fila_quando_o_servidor_responde(queue, fake_server):
     server, _ = fake_server
     _fill(queue, 3)

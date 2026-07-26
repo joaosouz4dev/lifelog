@@ -29,6 +29,45 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("capture")
 
+# ────────────────────────── PortAudio compartilhado ──────────────────────────
+# Uma instância por processo, criada sob lock. Instanciar PyAudio() dentro de
+# cada thread de captura derruba o processo com segfault assim que duas trilhas
+# leem ao mesmo tempo — reproduzido de forma isolada com dois PyAudio() e dois
+# streams WASAPI, sem nenhum código deste projeto envolvido.
+_audio = None
+_audio_lock = threading.Lock()
+
+
+def get_audio():
+    """Devolve a instância única do PortAudio, criando-a na primeira chamada."""
+    global _audio
+    with _audio_lock:
+        if _audio is None:
+            import pyaudiowpatch as pyaudio
+
+            _audio = pyaudio.PyAudio()
+        return _audio
+
+
+def close_audio() -> None:
+    """Encerra o PortAudio. Chamar só depois que todas as trilhas pararam.
+
+    Um `terminate()` disparado imediatamente após fechar streams WASAPI ainda
+    pega o driver liberando recursos e derruba o processo. A pausa curta dá
+    esse tempo; o try/except cobre o resto, já que aqui o trabalho todo já
+    terminou e um erro de encerramento não deve virar crash.
+    """
+    global _audio
+    with _audio_lock:
+        if _audio is None:
+            return
+        time.sleep(0.3)
+        try:
+            _audio.terminate()
+        except Exception:
+            log.debug("falha ao encerrar o PortAudio", exc_info=True)
+        _audio = None
+
 
 # ─────────────────────────────── áudio ───────────────────────────────
 
@@ -105,7 +144,10 @@ class CaptureTrack(threading.Thread):
     def run(self) -> None:
         import pyaudiowpatch as pyaudio
 
-        audio = pyaudio.PyAudio()
+        # A instância do PortAudio vem de fora e é compartilhada: criar uma
+        # PyAudio() por thread causa segfault no WASAPI quando duas trilhas
+        # rodam juntas (mic + system, que é o modo padrão). Ver get_audio().
+        audio = get_audio()
         stream = None
         try:
             stream = audio.open(
@@ -163,7 +205,8 @@ class CaptureTrack(threading.Thread):
             if stream is not None:
                 stream.stop_stream()
                 stream.close()
-            audio.terminate()
+            # Não chamar audio.terminate(): a instância é compartilhada com as
+            # outras trilhas. Quem encerra é close_audio(), no fim do processo.
             log.info("[%s] finalizada (%s segmentos)", self.source, self.segments_captured)
 
     def _flush(self) -> None:
@@ -196,9 +239,7 @@ class CaptureTrack(threading.Thread):
 
 
 def list_devices() -> None:
-    import pyaudiowpatch as pyaudio
-
-    audio = pyaudio.PyAudio()
+    audio = get_audio()
     try:
         print("\n=== Dispositivos WASAPI ===\n")
         try:
@@ -224,14 +265,14 @@ def list_devices() -> None:
                 tag = " [loopback]" if info.get("isLoopbackDevice") else ""
                 print(f"  [{i}] {info['name']}{tag}")
     finally:
-        audio.terminate()
+        # Só encerra aqui porque --list-devices é um comando de diagnóstico que
+        # sai logo em seguida. No fluxo de captura quem encerra é o main.
+        close_audio()
 
 
 def resolve_device(source: str):
     """Descobre índice, canais e taxa do dispositivo da trilha."""
-    import pyaudiowpatch as pyaudio
-
-    audio = pyaudio.PyAudio()
+    audio = get_audio()
     try:
         info = (
             audio.get_default_wasapi_loopback()
@@ -244,5 +285,5 @@ def resolve_device(source: str):
     except Exception as exc:
         log.error("dispositivo para '%s' indisponível: %s", source, exc)
         return None
-    finally:
-        audio.terminate()
+    # Sem terminate(): esta função roda antes de abrir as trilhas, e encerrar
+    # aqui deixaria a instância compartilhada morta quando elas subissem.

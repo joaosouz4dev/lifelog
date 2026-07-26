@@ -14,6 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from audio_source import AudioSourceProbe  # noqa: E402
 from buffer import SegmentQueue  # noqa: E402
 from capture import CaptureTrack, close_audio, resolve_device  # noqa: E402
 from uploader import Uploader  # noqa: E402
@@ -61,6 +62,10 @@ class CaptureRunner:
         self._paused = threading.Event()
         self.tracks: list[CaptureTrack] = []
 
+        # Um probe para todas as trilhas: o cache interno evita consultar o
+        # COM a cada leitura, e só a trilha de sistema o usa de fato.
+        probe = AudioSourceProbe()
+
         for source in sources or ["mic", "system"]:
             device = resolve_device(source)
             if device is None:
@@ -70,7 +75,7 @@ class CaptureRunner:
             self.tracks.append(
                 CaptureTrack(
                     source, index, channels, rate, self.queue, vad_params, model_path,
-                    paused=self._paused, bitrate=bitrate,
+                    paused=self._paused, bitrate=bitrate, probe=probe,
                 )
             )
 

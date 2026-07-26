@@ -12,6 +12,8 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
+from ..classify import classify_app, is_report_worthy
+
 # 1 token ≈ 4 caracteres em português. Aproximação suficiente para decidir
 # o corte; o custo real vem dos tokens que a API devolve.
 CHARS_PER_TOKEN = 4
@@ -32,6 +34,18 @@ class DayContext:
     speech_ms: int
     estimated_tokens: int
     truncated: bool
+    # Quantos segmentos ficaram de fora por serem entretenimento — vira uma
+    # nota no relatório para o leitor saber que aquele tempo existiu.
+    skipped_entertainment: int = 0
+    skipped_speech_ms: int = 0
+
+
+def _row_app(row: sqlite3.Row) -> str | None:
+    """Lê app_name tolerando linhas antigas que não têm a coluna."""
+    try:
+        return row["app_name"]
+    except (IndexError, KeyError):
+        return None
 
 
 def _day_bounds(day: date) -> tuple[str, str]:
@@ -44,7 +58,7 @@ def fetch_day_segments(conn: sqlite3.Connection, day: date) -> list[sqlite3.Row]
     return conn.execute(
         """
         SELECT s.started_at, s.duration_ms, s.transcript, s.confidence,
-               ss.source, ss.app_name
+               ss.source, COALESCE(s.app_name, ss.app_name) AS app_name
           FROM segments s JOIN sessions ss ON ss.id = s.session_id
          WHERE s.started_at >= ? AND s.started_at < ?
            AND s.status = 'done'
@@ -56,16 +70,44 @@ def fetch_day_segments(conn: sqlite3.Connection, day: date) -> list[sqlite3.Row]
 
 
 def build_day_context(
-    rows: list[sqlite3.Row], *, max_tokens: int = 120_000
+    rows: list[sqlite3.Row],
+    *,
+    max_tokens: int = 120_000,
+    skip_entertainment: bool = True,
+    include_browser: bool = True,
 ) -> DayContext:
-    """Transforma os segmentos do dia no texto que vai ao LLM."""
+    """Transforma os segmentos do dia no texto que vai ao LLM.
+
+    Entretenimento é descartado antes de tudo: resumir a série que tocou no
+    Netflix não é o relatório do seu dia, e ainda ocupa espaço de contexto que
+    a conversa de verdade precisa.
+    """
     if not rows:
         return DayContext("", 0, 0, 0, 0, False)
 
     total_speech = sum(r["duration_ms"] for r in rows)
-    budget_chars = max_tokens * CHARS_PER_TOKEN
 
-    selected = list(rows)
+    kept: list[sqlite3.Row] = []
+    skipped_count = 0
+    skipped_ms = 0
+
+    for row in rows:
+        category = classify_app(_row_app(row), row["source"])
+        if skip_entertainment and not is_report_worthy(
+            category, include_browser=include_browser
+        ):
+            skipped_count += 1
+            skipped_ms += row["duration_ms"]
+            continue
+        kept.append(row)
+
+    if not kept:
+        return DayContext(
+            "", len(rows), 0, total_speech, 0, False, skipped_count, skipped_ms
+        )
+
+    budget_chars = max_tokens * CHARS_PER_TOKEN
+    selected = kept
     truncated = False
 
     # Se estourar o teto, descarta os trechos mais curtos primeiro: são
@@ -116,6 +158,8 @@ def build_day_context(
         speech_ms=total_speech,
         estimated_tokens=len(text) // CHARS_PER_TOKEN,
         truncated=truncated,
+        skipped_entertainment=skipped_count,
+        skipped_speech_ms=skipped_ms,
     )
 
 
@@ -126,6 +170,13 @@ def build_day_prompt(day: date, context: DayContext) -> str:
         f"Fala capturada: {context.speech_ms / 60000:.0f} minutos "
         f"em {context.segment_count} trechos",
     ]
+    if context.skipped_entertainment:
+        header.append(
+            f"Nota: {context.skipped_entertainment} trechos "
+            f"({context.skipped_speech_ms / 60000:.0f} min) foram identificados como "
+            f"série, música ou jogo e não estão abaixo. Não os mencione no relatório; "
+            f"esse tempo simplesmente não faz parte dele."
+        )
     if context.truncated:
         header.append(
             f"AVISO: o dia não coube inteiro no contexto. "

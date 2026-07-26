@@ -123,8 +123,9 @@ def ingest_segment(data_dir: Path, meta: IngestMeta, audio_bytes: bytes) -> Inge
             cursor = tx.execute(
                 """
                 INSERT INTO segments
-                    (session_id, client_uid, started_at, duration_ms, audio_path, status)
-                VALUES (?, ?, ?, ?, ?, 'pending')
+                    (session_id, client_uid, started_at, duration_ms, audio_path,
+                     app_name, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'pending')
                 """,
                 (
                     session_id,
@@ -132,6 +133,8 @@ def ingest_segment(data_dir: Path, meta: IngestMeta, audio_bytes: bytes) -> Inge
                     meta.started_at.isoformat(),
                     meta.duration_ms,
                     str(path),
+                    # Por segmento: o app muda dentro de uma mesma sessão.
+                    meta.app_name,
                     ),
             )
             segment_id = int(cursor.lastrowid)

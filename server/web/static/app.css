@@ -256,6 +256,14 @@ main { padding: 1.25rem; max-width: 900px; margin: 0 auto; }
   padding: .05rem .5rem;
 }
 
+/* Origem excluída do relatório: visível, mas discreta. */
+.tag.excluded {
+  color: var(--muted);
+  border-style: dashed;
+  text-decoration: line-through;
+  opacity: .8;
+}
+
 .tag.status-failed { color: var(--err); border-color: var(--err); }
 .tag.status-pending, .tag.status-transcribing { color: var(--warn); border-color: var(--warn); }
 .tag.low-confidence { color: var(--warn); border-color: var(--warn); }

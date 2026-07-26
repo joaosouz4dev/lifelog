@@ -59,16 +59,14 @@ def _save(
                 completion.cost_cents,
             ),
         )
-        report_id = cursor.lastrowid
-
-    if not report_id:  # caminho do UPDATE
-        row = db.get_connection().execute(
-            "SELECT id FROM reports WHERE type = ? AND period_start = ?",
-            (report_type, period_start.isoformat()),
-        ).fetchone()
-        report_id = int(row["id"])
-
-    return int(report_id)
+    # Sempre consulta o id em vez de confiar no lastrowid: num ON CONFLICT que
+    # cai no UPDATE, o SQLite devolve o rowid de outra inserção qualquer da
+    # conexão, e a API acabava respondendo com um id que não existe.
+    row = db.get_connection().execute(
+        "SELECT id FROM reports WHERE type = ? AND period_start = ?",
+        (report_type, period_start.isoformat()),
+    ).fetchone()
+    return int(row["id"])
 
 
 async def generate_daily(chain: ProviderChain, day: date) -> dict:

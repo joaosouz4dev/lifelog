@@ -123,6 +123,7 @@ class CaptureTrack(threading.Thread):
         *,
         paused: threading.Event,
         bitrate: int = 24000,
+        probe=None,
     ):
         super().__init__(name=f"capture-{source}", daemon=True)
         self.source = source
@@ -133,6 +134,9 @@ class CaptureTrack(threading.Thread):
         self.vad = SileroVad(model_path, **vad_config)
         self.bitrate = bitrate
         self.paused = paused
+        # Descobre qual app está tocando, para o relatório poder separar
+        # reunião de série depois. None desliga a marcação.
+        self.probe = probe
         # `_stopping`, não `_stop`: threading.Thread já tem um método _stop()
         # interno, e sobrescrevê-lo com um Event faz join() estourar TypeError.
         self._stopping = threading.Event()
@@ -221,12 +225,17 @@ class CaptureTrack(threading.Thread):
             log.exception("[%s] falha ao codificar segmento", self.source)
             return
 
+        # Só o áudio do sistema tem um app de origem — o microfone é a pessoa.
+        # É esse rótulo que permite ao relatório ignorar série e música depois.
+        app_name = self.probe.snapshot() if (self.probe and self.source == "system") else None
+
         started_at = stream_start + timedelta(milliseconds=segment.started_offset_ms)
         self.queue.enqueue(
             payload,
             source=self.source,
             started_at=started_at,
             duration_ms=segment.duration_ms,
+            app_name=app_name,
         )
         self.segments_captured += 1
         log.info(

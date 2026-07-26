@@ -76,6 +76,9 @@ class Segment(BaseModel):
     stt_provider: str | None = None
     status: SegmentStatus
     app_name: str | None = None
+    # Categoria derivada do app: conversa, entretenimento, navegador…
+    # É o que permite à interface marcar o que ficou fora do relatório.
+    category: str | None = None
     has_audio: bool = False
 
 

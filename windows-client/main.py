@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(ROOT))
 
+from audio_source import AudioSourceProbe  # noqa: E402
 from buffer import SegmentQueue  # noqa: E402
 from capture import (  # noqa: E402
     CaptureTrack, close_audio, list_devices, resolve_device,
@@ -90,6 +91,8 @@ def main() -> int:
     paused = threading.Event()
     sources = ["mic", "system"] if args.source == "both" else [args.source]
 
+    probe = AudioSourceProbe()
+
     tracks: list[CaptureTrack] = []
     for source in sources:
         device = resolve_device(source)
@@ -100,7 +103,7 @@ def main() -> int:
         tracks.append(
             CaptureTrack(
                 source, index, channels, rate, queue, vad_params, model_path,
-                paused=paused, bitrate=bitrate,
+                paused=paused, bitrate=bitrate, probe=probe,
             )
         )
 

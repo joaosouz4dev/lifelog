@@ -100,6 +100,17 @@ function segmentNode(segment) {
   const tags = document.createElement('div');
   tags.className = 'tags';
   const chips = [`<span class="tag">${SOURCE_LABEL[segment.source] || segment.source}</span>`];
+
+  // Mostra a origem e sinaliza o que o relatório ignora — sem isso não dá
+  // para entender por que um trecho não apareceu no resumo do dia.
+  if (segment.app_name) {
+    const excluded = segment.category === 'entertainment';
+    chips.push(
+      `<span class="tag${excluded ? ' excluded' : ''}" ` +
+      `title="${excluded ? 'Fora do relatório: entretenimento' : 'Origem do áudio'}">` +
+      `${escapeHTML(segment.app_name.replace(/\.exe/g, ''))}</span>`
+    );
+  }
   if (segment.status !== 'done') {
     chips.push(`<span class="tag status-${segment.status}">${segment.status}</span>`);
   }

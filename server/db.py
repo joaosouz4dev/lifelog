@@ -134,8 +134,22 @@ def _m001_initial(conn: sqlite3.Connection) -> None:
     """)
 
 
+def _m002_segment_app_name(conn: sqlite3.Connection) -> None:
+    """App de origem por segmento, não por sessão.
+
+    Uma sessão dura minutos e o app muda dentro dela — o Netflix pausa, a
+    reunião começa. Sem o rótulo por segmento não dá para tirar a série do
+    relatório sem tirar junto a conversa que veio na mesma sessão.
+    """
+    conn.executescript("""
+        ALTER TABLE segments ADD COLUMN app_name TEXT;
+        CREATE INDEX idx_segments_app ON segments(app_name);
+    """)
+
+
 MIGRATIONS: list[Callable[[sqlite3.Connection], None]] = [
     _m001_initial,
+    _m002_segment_app_name,
 ]
 
 

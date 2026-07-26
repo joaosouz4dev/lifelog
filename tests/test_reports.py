@@ -45,7 +45,7 @@ class FakeLLM:
 
 def _seed_day(day: date, texts: list[str], *, source: str = "mic",
               base_hour: int = 9, duration_ms: int = 5000,
-              spacing_seconds: int = 10) -> None:
+              spacing_seconds: int = 10, app_name: str | None = None) -> None:
     """Insere segmentos transcritos num dia.
 
     `spacing_seconds` fica abaixo do BLOCK_GAP por padrão, então os segmentos
@@ -63,13 +63,14 @@ def _seed_day(day: date, texts: list[str], *, source: str = "mic",
             conn.execute(
                 """
                 INSERT INTO segments
-                    (session_id, client_uid, started_at, duration_ms, transcript, status)
-                VALUES (?, ?, ?, ?, ?, 'done')
+                    (session_id, client_uid, started_at, duration_ms, transcript,
+                     app_name, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'done')
                 """,
                 # a hora entra no uid porque um teste chama _seed_day duas vezes
                 # no mesmo dia e fonte (manhã e tarde)
                 (session_id, f"uid-{day}-{source}-{base_hour:02d}-{i:04d}",
-                 started.isoformat(), duration_ms, text),
+                 started.isoformat(), duration_ms, text, app_name),
             )
 
 
@@ -158,6 +159,89 @@ def test_segmentos_vazios_sao_ignorados(temp_db):
     assert len(rows) == 1
 
 
+# ───────────────────── filtro por origem do áudio ─────────────────────
+
+
+def test_serie_no_netflix_fica_fora_do_relatorio(temp_db):
+    """O caso que motivou o filtro: um dia com série e reunião.
+
+    O relatório deve falar da reunião, não do enredo da série.
+    """
+    day = date(2026, 7, 20)
+    _seed_day(day, ["decidimos adiar a entrega para sexta"],
+              source="system", base_hour=10, app_name="teams.exe")
+    _seed_day(day, ["você nunca vai adivinhar quem é o assassino"],
+              source="system", base_hour=21, app_name="netflix.exe")
+
+    context = build_day_context(fetch_day_segments(db.get_connection(), day))
+
+    assert "adiar a entrega" in context.text
+    assert "assassino" not in context.text, "série não pode entrar no relatório"
+    assert context.skipped_entertainment == 1
+
+
+def test_musica_de_fundo_nao_derruba_a_reuniao(temp_db):
+    """Spotify tocando durante o Teams não pode custar a reunião."""
+    day = date(2026, 7, 20)
+    _seed_day(day, ["revisão do orçamento com o time"],
+              source="system", app_name="teams.exe+spotify.exe")
+
+    context = build_day_context(fetch_day_segments(db.get_connection(), day))
+
+    assert "orçamento" in context.text
+    assert context.skipped_entertainment == 0
+
+
+def test_microfone_entra_mesmo_com_netflix_tocando(temp_db):
+    """Você falando é sempre relevante — o filtro é só do áudio do sistema."""
+    day = date(2026, 7, 20)
+    _seed_day(day, ["preciso lembrar de ligar para o cliente"],
+              source="mic", base_hour=21, app_name="netflix.exe")
+
+    context = build_day_context(fetch_day_segments(db.get_connection(), day))
+
+    assert "ligar para o cliente" in context.text
+    assert context.skipped_entertainment == 0
+
+
+def test_prompt_avisa_sobre_o_tempo_descartado(temp_db):
+    """O modelo precisa saber que houve tempo omitido, para não inventar."""
+    day = date(2026, 7, 20)
+    _seed_day(day, ["conversa de trabalho"], source="system", app_name="zoom.exe")
+    _seed_day(day, ["episódio da série"] * 3, source="system",
+              base_hour=20, app_name="netflix.exe")
+
+    context = build_day_context(fetch_day_segments(db.get_connection(), day))
+    prompt = build_day_prompt(day, context)
+
+    assert "série, música ou jogo" in prompt
+    assert "Não os mencione" in prompt
+
+
+def test_dia_so_de_entretenimento_nao_gera_relatorio(temp_db):
+    """Um sábado inteiro de Netflix não deve virar relatório de trabalho."""
+    day = date(2026, 7, 25)
+    _seed_day(day, ["cena da série"] * 5, source="system", app_name="netflix.exe")
+
+    llm = FakeLLM()
+    with pytest.raises(NoMaterial):
+        asyncio.run(generate_daily(ProviderChain("llm", [llm]), day))
+
+    assert llm.last_prompt is None, "não deve gastar token com um dia só de série"
+
+
+def test_navegador_entra_porque_pode_ser_reuniao(temp_db):
+    """msedge é ambíguo: Meet ou YouTube. Na dúvida, incluir."""
+    day = date(2026, 7, 20)
+    _seed_day(day, ["alinhamento sobre o roadmap"],
+              source="system", app_name="msedge.exe")
+
+    context = build_day_context(fetch_day_segments(db.get_connection(), day))
+
+    assert "roadmap" in context.text
+    assert context.skipped_entertainment == 0
+
+
 # ────────────────────────────── generator ──────────────────────────────
 
 
@@ -216,6 +300,27 @@ def test_regerar_o_mesmo_dia_substitui_em_vez_de_duplicar(temp_db):
 
     assert len(rows) == 1, "regerar não pode duplicar"
     assert rows[0]["content_md"] == "segunda versão"
+
+
+def test_id_devolvido_ao_regerar_aponta_para_o_relatorio_certo(temp_db):
+    """No caminho de UPDATE, lastrowid do SQLite devolve lixo.
+
+    A API respondia com um id inexistente, e abrir o relatório recém-gerado
+    dava 404.
+    """
+    day = date(2026, 7, 20)
+    _seed_day(day, ["conteúdo do dia"])
+
+    primeiro = asyncio.run(generate_daily(ProviderChain("llm", [FakeLLM("v1")]), day))
+    segundo = asyncio.run(generate_daily(ProviderChain("llm", [FakeLLM("v2")]), day))
+
+    assert primeiro["id"] == segundo["id"], "regerar deve devolver o mesmo id"
+
+    row = db.get_connection().execute(
+        "SELECT content_md FROM reports WHERE id = ?", (segundo["id"],)
+    ).fetchone()
+    assert row is not None, "o id devolvido tem que existir na tabela"
+    assert row["content_md"] == "v2"
 
 
 def test_relatorio_mensal_consome_os_diarios(temp_db):

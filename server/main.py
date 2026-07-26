@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db, reports
+from .classify import classify_app
 from .config import get_config
 from .hub.base import BudgetExceeded, ProviderError
 from .hub.llm import build_llm_chain
@@ -126,6 +127,7 @@ def _day_bounds(day: str | None) -> tuple[str, str, str]:
 
 
 def _row_to_segment(row) -> Segment:
+    app_name = row["app_name"]
     return Segment(
         id=row["id"],
         session_id=row["session_id"],
@@ -138,7 +140,8 @@ def _row_to_segment(row) -> Segment:
         speaker_label=row["speaker_label"],
         stt_provider=row["stt_provider"],
         status=row["status"],
-        app_name=row["app_name"],
+        app_name=app_name,
+        category=classify_app(app_name, row["source"]).value,
         has_audio=bool(row["audio_path"]),
     )
 
@@ -151,7 +154,7 @@ def list_segments(
 ) -> list[Segment]:
     _, start, end = _day_bounds(day)
     sql = """
-        SELECT s.*, ss.source, ss.app_name
+        SELECT s.*, ss.source, COALESCE(s.app_name, ss.app_name) AS app_name
           FROM segments s JOIN sessions ss ON ss.id = s.session_id
          WHERE s.started_at >= ? AND s.started_at < ?
     """
@@ -171,7 +174,7 @@ def search(q: str = Query(min_length=2), limit: int = Query(100, le=500)) -> lis
     """Busca textual (FTS5, insensível a acento). Semântica chega na Fase 3."""
     rows = db.get_connection().execute(
         """
-        SELECT s.*, ss.source, ss.app_name
+        SELECT s.*, ss.source, COALESCE(s.app_name, ss.app_name) AS app_name
           FROM segments_fts f
           JOIN segments s  ON s.id = f.rowid
           JOIN sessions ss ON ss.id = s.session_id

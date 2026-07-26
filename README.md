@@ -86,13 +86,27 @@ circuit breaker e é pulado por um tempo.
 stt:
   chain: [faster_whisper_local, deepgram]
   daily_budget_cents: 200
+
+llm:
+  chain: [claude, ollama]
+  daily_budget_cents: 500
 ```
 
-Todo custo é registrado e visível em `GET /api/hub/stt` e no botão **Hub** da
-interface. Ao atingir o teto diário, provedores pagos são pulados e os locais
-continuam trabalhando.
+Os dois hubs têm tetos independentes. Todo custo é registrado e visível em
+`GET /api/hub/stt` e `GET /api/hub/llm`, e no botão **Hub** da interface. Ao
+atingir o teto diário, provedores pagos são pulados e os locais continuam
+trabalhando.
 
 Trocar de provedor é uma linha de configuração — nenhum código muda.
+
+Para ativar o Claude nos relatórios:
+
+```bash
+setx ANTHROPIC_API_KEY "sua-chave"
+```
+
+e mude `enabled: false` para `true` no bloco `llm.providers.claude`. Um
+relatório diário custa cerca de 18 centavos de dólar com `claude-sonnet-5`.
 
 ## Privacidade
 
@@ -138,7 +152,7 @@ tests/           testes automatizados
 - **Fase 1 — concluída.** Servidor, hub de STT, cliente Windows, timeline e busca.
 - **Fase 2 — Android.** React Native + módulo Kotlin. Ver as restrições reais do
   sistema em [protocol/ingest.md](protocol/ingest.md).
-- **Fase 3 — Inteligência.** Hub de LLM, relatórios diários e mensais, busca
-  semântica, chat sobre as transcrições.
+- **Fase 3 — Inteligência.** Hub de LLM pronto (Claude + Ollama, com fallback);
+  faltam os relatórios diários e mensais, a busca semântica e o chat.
 - **Fase 4 — Refinamento.** Diarização, dashboard de custos, blocklist ativa.
 - **Fase 5 — Gadget.** ESP32-S3 com microfone I2S. O protocolo já está pronto.

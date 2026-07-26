@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from ..models import Transcript
+from ..models import Completion, Transcript
 
 
 class ProviderError(Exception):
@@ -50,7 +50,7 @@ class LLMProvider(Protocol):
 
     async def complete(
         self, prompt: str, *, system: str | None = None, max_tokens: int = 4096
-    ) -> str: ...
+    ) -> Completion: ...
 
     async def health(self) -> bool: ...
 

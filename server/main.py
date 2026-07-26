@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db
 from .config import get_config
+from .hub.llm import build_llm_chain
 from .hub.stt import build_stt_chain
 from .models import DayStats, HubStatus, IngestMeta, IngestResponse, Segment, Source
 from .pipeline import ingest as ingest_pipeline
@@ -37,11 +38,12 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB — muito acima de um chunk de 30s
 
 worker: TranscriptionWorker | None = None
 stt_chain = None
+llm_chain = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global worker, stt_chain
+    global worker, stt_chain, llm_chain
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     db.init(DB_PATH)
@@ -49,6 +51,9 @@ async def lifespan(app: FastAPI):
 
     stt_chain = build_stt_chain(cfg)
     log.info("cadeia de STT: %s", " -> ".join(stt_chain.chain_names) or "(vazia)")
+
+    llm_chain = build_llm_chain(cfg)
+    log.info("cadeia de LLM: %s", " -> ".join(llm_chain.chain_names) or "(vazia)")
 
     # Idioma no nível do hub: alcançar dentro da config de um provedor nomeado
     # faria trocar a ordem da cadeia mudar silenciosamente o idioma.
@@ -249,6 +254,19 @@ async def hub_status() -> HubStatus:
         providers=await stt_chain.health(),
         spent_today_cents=stt_chain.spent_today_cents(),
         daily_budget_cents=stt_chain.daily_budget_cents,
+    )
+
+
+@app.get("/api/hub/llm", response_model=HubStatus)
+async def llm_status() -> HubStatus:
+    if llm_chain is None:
+        raise HTTPException(503, "hub não inicializado")
+    return HubStatus(
+        hub="llm",
+        chain=llm_chain.chain_names,
+        providers=await llm_chain.health(),
+        spent_today_cents=llm_chain.spent_today_cents(),
+        daily_budget_cents=llm_chain.daily_budget_cents,
     )
 
 

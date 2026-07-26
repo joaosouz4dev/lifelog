@@ -54,14 +54,13 @@ stt:
       model: whisper-1
 
 # ─────────────────────────────────────────────────────────────
-# Hub de LLM (relatórios e chat) — Fase 3
-#
-# Nenhum destes provedores existe ainda: não há build_llm_chain nem registry
-# em server/hub/llm/. O bloco está aqui como contrato do formato que a Fase 3
-# vai implementar, não como funcionalidade disponível.
+# Hub de LLM (relatórios e chat)
+# Mesma mecânica do hub de STT: cadeia com fallback, circuit breaker e teto.
 # ─────────────────────────────────────────────────────────────
 llm:
   chain: [claude, ollama]
+
+  # ~R$0,30/dia. Um relatório diário custa poucos centavos com sonnet-5.
   daily_budget_cents: 500
 
   circuit_breaker:
@@ -71,14 +70,17 @@ llm:
   providers:
     claude:
       type: anthropic
-      enabled: false
+      enabled: false          # ative depois de exportar ANTHROPIC_API_KEY
       api_key: ${ANTHROPIC_API_KEY}
-      model: claude-sonnet-5   # opus-5 para relatório mensal, se quiser
+      # sonnet-5 dá conta de resumir transcrição; troque para claude-opus-5
+      # se quiser mais profundidade no relatório mensal.
+      model: claude-sonnet-5
       max_tokens: 16000
+      effort: medium          # low | medium | high | xhigh | max
 
     ollama:
       type: ollama
-      enabled: false
+      enabled: false          # ative se tiver Ollama rodando
       base_url: http://localhost:11434
       model: qwen2.5:14b
 

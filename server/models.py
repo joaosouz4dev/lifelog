@@ -89,6 +89,24 @@ class Transcript(BaseModel):
     cost_cents: float = 0.0
 
 
+class Completion(BaseModel):
+    """Resultado devolvido por um provedor de LLM.
+
+    Espelha Transcript: o hub lê `cost_cents` para o teto de gasto, então todo
+    provedor precisa devolver o custo já calculado.
+    """
+
+    text: str
+    provider: str = ""
+    model: str = ""
+    tokens_in: int = 0
+    tokens_out: int = 0
+    cost_cents: float = 0.0
+    # 'refusal' quando o modelo recusou por segurança — o texto vem vazio e
+    # não adianta repetir o mesmo pedido.
+    stop_reason: str | None = None
+
+
 class ProviderHealth(BaseModel):
     name: str
     available: bool

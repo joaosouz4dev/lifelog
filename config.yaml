@@ -33,7 +33,12 @@ stt:
       type: faster_whisper
       model: large-v3
       device: cuda            # cai para cpu automaticamente se não houver GPU
-      compute_type: float16   # use int8 se a VRAM apertar
+      # int8 economiza ~1,8 GB de VRAM, mas medido sobre 30 segmentos reais
+      # divergiu do float16 em 23% deles — e não só em detalhe: trocou
+      # "fala aí, baixinha" por "olha aí, baixinho" e "opa, grande" por
+      # "opa, peraí". Também ficou mais lento (29,4s contra 26,6s). Só vale
+      # se a VRAM for escassa a ponto de não caber o float16.
+      compute_type: float16
       language: pt
       beam_size: 5
       # O large-v3 segura ~3,8 GB de VRAM. Depois deste tempo sem transcrever

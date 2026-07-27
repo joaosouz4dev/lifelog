@@ -99,6 +99,9 @@ def encode_opus(audio: np.ndarray, bitrate: int = 24000) -> bytes:
             "-c:a", "libopus", "-b:a", str(bitrate), "-f", "ogg", "pipe:1",
         ],
         input=pcm, capture_output=True, check=False,
+        # Sem isto o Windows abre um console para cada chamada. Como há uma
+        # por segmento de fala, a tela pisca a cada frase capturada.
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     if process.returncode != 0:
         raise RuntimeError(f"ffmpeg falhou: {process.stderr.decode()[:300]}")

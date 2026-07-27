@@ -80,6 +80,8 @@ HIDDEN_IMPORTS = [
     "webview.platforms.edgechromium",
     "clr_loader",
     "pythonnet",
+    # Encerra o servidor de versão antiga preso na porta após uma atualização.
+    "psutil",
 ]
 
 # Os executáveis gerados, na ordem: o primeiro recebe as dependências e os

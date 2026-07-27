@@ -13,6 +13,7 @@ import logging
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from pathlib import Path
 
@@ -34,6 +35,16 @@ ASSETS = ROOT / "assets"
 COLOR_ERROR = (190, 150, 40)
 
 _icon_cache: dict[str, Image.Image] = {}
+
+
+def _my_version() -> str:
+    """Versão desta build — a mesma que o servidor irmão reporta."""
+    try:
+        from server.version import current
+
+        return current()
+    except Exception:
+        return "dev"
 
 
 def _make_icon(*, paused: bool = False, error: bool = False) -> Image.Image:
@@ -157,20 +168,72 @@ class LifelogTray:
 
     # ─────────────────────────────── ciclo ───────────────────────────────
 
+    def _server_version(self, url: str) -> str | None:
+        """Versão do servidor que atende nesta porta, ou None se não atende."""
+        import httpx
+
+        try:
+            if httpx.get(f"{url}/health", timeout=3).status_code != 200:
+                return None
+        except Exception:
+            return None
+
+        try:
+            return httpx.get(f"{url}/api/version", timeout=3).json().get("current")
+        except Exception:
+            # Servidor antigo demais para ter o endpoint: responde ao /health
+            # mas não sabe dizer a versão. Vale trocar do mesmo jeito.
+            return "desconhecida"
+
+    def _stop_stale_server(self) -> bool:
+        """Encerra um servidor de outra versão preso na porta.
+
+        Depois de atualizar, o servidor antigo continua no ar: a bandeja nova
+        vê a porta ocupada, não sobe o próprio, e os segmentos ficam presos em
+        'pending' — capturados mas nunca transcritos.
+        """
+        try:
+            import psutil
+        except ImportError:
+            log.warning("psutil ausente — não dá para encerrar o servidor antigo")
+            return False
+
+        encerrados = 0
+        for proc in psutil.process_iter(["name", "pid"]):
+            if (proc.info["name"] or "").lower() != "lifelogserver.exe":
+                continue
+            try:
+                proc.terminate()
+                proc.wait(timeout=8)
+                encerrados += 1
+            except Exception:
+                log.debug("falha ao encerrar o servidor pid=%s", proc.info["pid"])
+        return encerrados > 0
+
     def _ensure_server(self) -> None:
-        """Sobe o servidor se ele não estiver respondendo.
+        """Sobe o servidor se ele não estiver respondendo — ou se for de outra versão.
 
         No app empacotado a bandeja é o único processo que o usuário inicia —
         sem isto, a captura encheria a fila local sem nunca conseguir enviar.
         """
-        import httpx
-
         url = self.runner.server_url if self.runner else "http://127.0.0.1:8000"
-        try:
-            if httpx.get(f"{url}/health", timeout=3).status_code == 200:
+        no_ar = self._server_version(url)
+
+        if no_ar is not None:
+            minha = _my_version()
+            if no_ar == minha or "dev" in (no_ar, minha):
+                # "dev" é quem roda do código-fonte. Comparar com uma versão
+                # publicada daria divergência sempre, e a bandeja de
+                # desenvolvimento derrubaria o servidor do app instalado.
                 return
-        except Exception:
-            pass
+            # Conferir só o /health deixaria passar o servidor da versão
+            # anterior, que atende mas não fala o mesmo protocolo.
+            log.info("servidor na porta é da versão %s (a minha é %s); trocando",
+                     no_ar, minha)
+            if not self._stop_stale_server():
+                log.warning("não consegui encerrar o servidor antigo; seguindo com ele")
+                return
+            time.sleep(1.5)  # a porta leva um instante para liberar
 
         exe = Path(sys.executable).parent / "LifelogServer.exe"
         if not exe.exists():

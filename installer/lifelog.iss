@@ -48,10 +48,10 @@ Name: "desktopicon"; Description: "Criar atalho na area de trabalho"; GroupDescr
 Source: "..\dist\Lifelog\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
+; Um atalho so: o Lifelog e a bandeja. A janela da interface (LifelogUI.exe)
+; abre pelo menu da bandeja — um atalho proprio para ela aparecia no menu
+; Iniciar como se fosse um segundo aplicativo, o que confunde mais do que ajuda.
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"
-; Janela propria em vez de um atalho de URL: abrir no navegador obriga a
-; pessoa a lidar com a porta, e a aba se perde entre as outras.
-Name: "{group}\Interface do Lifelog"; Filename: "{app}\{#MyUiExe}"
 Name: "{group}\Desinstalar o {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"; Tasks: desktopicon
 ; A bandeja sobe o servidor quando precisa, entao um atalho na inicializacao

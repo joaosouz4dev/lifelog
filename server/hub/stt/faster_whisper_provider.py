@@ -3,12 +3,18 @@
 Custo zero, sem rede, sem áudio saindo da máquina. É o provedor primário.
 O modelo é carregado sob demanda e reaproveitado; a transcrição roda numa
 thread separada para não travar o event loop.
+
+Depois de um tempo sem transcrever, o modelo é descarregado: o `large-v3`
+ocupa ~5 GB da VRAM, o que numa placa de 8 GB não sobra para mais nada.
+Recarregar custa ~7 s, pago só na primeira fala depois do intervalo ocioso.
 """
 
 from __future__ import annotations
 
 import asyncio
+import gc
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +22,11 @@ from ...models import Transcript
 from ..base import ProviderError
 
 log = logging.getLogger(__name__)
+
+# Curto demais recarrega no meio de uma conversa com pausas; longo demais
+# segura a VRAM à toa. Cinco minutos cobre a pausa entre frases sem prender
+# a placa enquanto ninguém fala.
+IDLE_UNLOAD_SECONDS = 300
 
 
 class FasterWhisperProvider:
@@ -29,9 +40,16 @@ class FasterWhisperProvider:
         self.compute_type = cfg.get("compute_type", "float16")
         self.default_language = cfg.get("language", "pt")
         self.beam_size = int(cfg.get("beam_size", 5))
+        # 0 desativa a descarga — útil em máquina com VRAM sobrando, onde a
+        # recarga só atrapalharia.
+        self.idle_unload_seconds = float(
+            cfg.get("idle_unload_seconds", IDLE_UNLOAD_SECONDS)
+        )
         self._model = None
         self._load_lock = asyncio.Lock()
         self._load_error: str | None = None
+        self._last_used = 0.0
+        self._idle_task: asyncio.Task | None = None
 
     # ────────────────────────────── modelo ──────────────────────────────
 
@@ -70,7 +88,46 @@ class FasterWhisperProvider:
                         provider=self.name,
                     ) from exc
                 log.info("modelo pronto (%s, %s)", self.device, self.compute_type)
+        self._last_used = time.monotonic()
+        self._ensure_idle_watcher()
         return self._model
+
+    def _ensure_idle_watcher(self) -> None:
+        """Sobe o vigia de ociosidade, se ainda não estiver rodando."""
+        if self.idle_unload_seconds <= 0:
+            return
+        if self._idle_task is None or self._idle_task.done():
+            self._idle_task = asyncio.create_task(self._watch_idle())
+
+    async def _watch_idle(self) -> None:
+        """Descarrega o modelo depois de um tempo sem transcrever."""
+        try:
+            while True:
+                await asyncio.sleep(min(30.0, self.idle_unload_seconds))
+                if self._model is None:
+                    return
+                ocioso = time.monotonic() - self._last_used
+                if ocioso >= self.idle_unload_seconds:
+                    await self.unload()
+                    return
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # pragma: no cover - o vigia não pode derrubar o app
+            log.exception("%s: falha no vigia de ociosidade", self.name)
+
+    async def unload(self) -> None:
+        """Libera o modelo e a VRAM que ele segura."""
+        async with self._load_lock:
+            if self._model is None:
+                return
+            self._model = None
+            # CTranslate2 devolve a VRAM ao coletar o objeto, não ao perder a
+            # referência — sem o gc.collect() a placa continua ocupada.
+            await asyncio.to_thread(gc.collect)
+            log.info(
+                "%s: modelo descarregado após %.0fs sem uso",
+                self.name, self.idle_unload_seconds,
+            )
 
     # ─────────────────────────── transcrição ───────────────────────────
 
@@ -121,6 +178,10 @@ class FasterWhisperProvider:
             raise
         except Exception as exc:
             raise ProviderError(f"falha na transcrição: {exc}", provider=self.name) from exc
+        finally:
+            # Marcado no fim, não no início: uma transcrição longa não pode
+            # deixar o vigia achar que o modelo está ocioso enquanto trabalha.
+            self._last_used = time.monotonic()
 
     # ──────────────────────────── diagnóstico ───────────────────────────
 

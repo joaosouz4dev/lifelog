@@ -36,6 +36,10 @@ stt:
       compute_type: float16   # use int8 se a VRAM apertar
       language: pt
       beam_size: 5
+      # O large-v3 segura ~3,8 GB de VRAM. Depois deste tempo sem transcrever
+      # o modelo é descarregado e a placa fica livre; a próxima fala paga ~7s
+      # de recarga. Use 0 para manter o modelo sempre carregado.
+      idle_unload_seconds: 300
 
     deepgram:
       type: deepgram

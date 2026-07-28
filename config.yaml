@@ -9,6 +9,7 @@ server:
   data_dir: ./data
   db_path: ./data/lifelog.db
 
+
 # ─────────────────────────────────────────────────────────────
 # Hub de transcrição (STT)
 # A cadeia é tentada em ordem. Provedor que falha entra em
@@ -120,14 +121,36 @@ capture:
     codec: opus
     bitrate: 24000
 
-  # AINDA NÃO IMPLEMENTADO (previsto para a Fase 4).
-  # Janelas/apps cujo áudio de sistema deve ser ignorado. Casa por substring,
-  # sem diferenciar maiúsculas. Nomes de janela são um conceito do Windows;
-  # no Android o equivalente será package name.
-  windows_blocklist:
-    - "1Password"
-    - "Bitwarden"
-    - "KeePass"
+  # ── O que transcrever ──────────────────────────────────────
+  # Casa por pedaço de texto, sem diferenciar maiúsculas, tanto no nome do
+  # programa quanto no título da janela — e é o título que revela o site
+  # aberto ("Reunião — Google Meet", "… - YouTube"), já que no navegador
+  # tudo é só "chrome.exe".
+  #
+  # O microfone passa sempre: é a sua própria voz, o núcleo do lifelog.
+  #
+  #   allowlist vazia      → transcreve tudo, menos entretenimento conhecido
+  #   allowlist preenchida → só o que casar com ela
+  #   blocklist            → vence a allowlist, sempre
+  allowlist:
+    - meet.google
+    - google meet
+    - zoom
+    - teams
+    - webex
+    - whereby
+    - jitsi
+    - gather
+    - discord
+    - slack
+    - whatsapp
+
+  # Gerenciadores de senha nunca devem ser gravados, mesmo que algo acima
+  # case por acidente.
+  blocklist:
+    - 1password
+    - bitwarden
+    - keepass
 
 # ─────────────────────────────────────────────────────────────
 # Privacidade e retenção

@@ -216,7 +216,8 @@ def stats(day: str | None = None) -> DayStats:
                COUNT(*) AS n,
                COALESCE(SUM(s.duration_ms), 0) AS speech_ms,
                COALESCE(SUM(s.status IN ('pending', 'transcribing')), 0) AS pending,
-               COALESCE(SUM(s.status = 'failed'), 0) AS failed
+               COALESCE(SUM(s.status = 'failed'), 0) AS failed,
+               COALESCE(SUM(s.status = 'skipped'), 0) AS skipped
           FROM segments s JOIN sessions ss ON ss.id = s.session_id
          WHERE s.started_at >= ? AND s.started_at < ?
          GROUP BY ss.source
@@ -230,6 +231,7 @@ def stats(day: str | None = None) -> DayStats:
         total_speech_ms=sum(r["speech_ms"] for r in rows),
         pending=sum(r["pending"] for r in rows),
         failed=sum(r["failed"] for r in rows),
+        skipped=sum(r["skipped"] for r in rows),
         by_source={r["source"]: r["n"] for r in rows},
     )
 

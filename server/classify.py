@@ -41,6 +41,24 @@ _BROWSERS = (
     "librewolf", "arc",
 )
 
+# O cliente manda "chrome.exe｜Reunião — Google Meet". A barra vertical cheia
+# (U+FF5C) separa executável de título: o título comum já usa "|" e "-".
+TITLE_SEP = "｜"
+
+# Casadas contra o título da janela, que é o que revela o site aberto.
+_CONVERSATION_SITES = (
+    "meet.google", "google meet", "zoom", "teams", "webex", "whereby",
+    "jitsi", "chime", "bluejeans", "gather", "around.co", "discord",
+    "slack", "whatsapp", "telegram", "hangouts", "skype",
+)
+
+_ENTERTAINMENT_SITES = (
+    "youtube", "netflix", "spotify", "twitch", "primevideo", "prime video",
+    "disney", "hbo", "max.com", "globoplay", "crunchyroll", "deezer",
+    "tidal", "soundcloud", "vimeo", "tiktok", "instagram", "facebook",
+    "kwai", "pluto tv",
+)
+
 
 def classify_app(app_name: str | None, source: str = "system") -> Category:
     """Categoria de um segmento.
@@ -56,15 +74,41 @@ def classify_app(app_name: str | None, source: str = "system") -> Category:
     if not app_name:
         return Category.UNKNOWN
 
-    apps = [part.strip().lower() for part in app_name.split("+") if part.strip()]
+    partes = [part.strip().lower() for part in app_name.split("+") if part.strip()]
 
-    if any(any(k in app for k in _CONVERSATION) for app in apps):
+    categorias = {_classify_one(parte) for parte in partes}
+
+    # Basta um app de conversa: perder uma reunião por causa de música ao
+    # fundo seria o erro mais caro.
+    if Category.CONVERSATION in categorias:
         return Category.CONVERSATION
-    if any(any(k in app for k in _BROWSERS) for app in apps):
+    if Category.BROWSER in categorias:
         return Category.BROWSER
-    if any(any(k in app for k in _ENTERTAINMENT) for app in apps):
+    if Category.ENTERTAINMENT in categorias:
         return Category.ENTERTAINMENT
+    return Category.UNKNOWN
 
+
+def _classify_one(parte: str) -> Category:
+    """Categoria de um app, considerando o título da janela se houver."""
+    executavel, _, titulo = parte.partition(TITLE_SEP)
+
+    if any(k in executavel for k in _CONVERSATION):
+        return Category.CONVERSATION
+
+    if titulo:
+        # O título é o que distingue Meet de Netflix dentro do mesmo
+        # navegador. Conversa primeiro: uma reunião com o YouTube aberto
+        # noutra aba continua sendo reunião.
+        if any(k in titulo for k in _CONVERSATION_SITES):
+            return Category.CONVERSATION
+        if any(k in titulo for k in _ENTERTAINMENT_SITES):
+            return Category.ENTERTAINMENT
+
+    if any(k in executavel for k in _BROWSERS):
+        return Category.BROWSER
+    if any(k in executavel for k in _ENTERTAINMENT):
+        return Category.ENTERTAINMENT
     return Category.UNKNOWN
 
 
@@ -80,6 +124,42 @@ def is_report_worthy(category: Category, *, include_browser: bool = True) -> boo
     if category is Category.BROWSER:
         return include_browser
     return True
+
+
+def should_transcribe(
+    app_name: str | None,
+    source: str,
+    *,
+    allowlist: list[str] | None = None,
+    blocklist: list[str] | None = None,
+) -> tuple[bool, str]:
+    """Este segmento deve ser transcrito? Devolve (sim/não, motivo).
+
+    Com `allowlist` preenchida, só passa o que casar com ela — evita gastar
+    transcrição (e guardar áudio de terceiros) com o que não interessa. O
+    microfone passa sempre: é a sua própria voz, o núcleo do lifelog.
+    """
+    if source == "mic":
+        return True, "microfone"
+
+    alvo = (app_name or "").lower()
+
+    for termo in blocklist or ():
+        if termo.lower().strip() in alvo:
+            return False, f"bloqueado por '{termo}'"
+
+    if allowlist:
+        for termo in allowlist:
+            if termo.lower().strip() in alvo:
+                return True, f"permitido por '{termo}'"
+        return False, "fora da lista de permitidos"
+
+    # Sem allowlist, mantém o comportamento anterior: tudo menos
+    # entretenimento reconhecido.
+    categoria = classify_app(app_name, source)
+    if categoria is Category.ENTERTAINMENT:
+        return False, "entretenimento"
+    return True, str(categoria)
 
 
 def label(category: Category) -> str:

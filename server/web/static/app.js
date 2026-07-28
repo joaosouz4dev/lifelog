@@ -56,6 +56,12 @@ function renderStats(stats) {
   const alerts = [];
   if (stats.pending) alerts.push(`<span class="tag status-pending">${stats.pending} na fila</span>`);
   if (stats.failed) alerts.push(`<span class="tag status-failed">${stats.failed} com falha</span>`);
+  if (stats.skipped) {
+    alerts.push(
+      `<span class="tag excluded" title="Fora da lista de permitidos — capturados, mas não transcritos">` +
+      `${stats.skipped} ignorados</span>`
+    );
+  }
 
   statsEl.innerHTML = `
     <div><b>${stats.total_segments}</b> segmentos</div>
@@ -63,6 +69,20 @@ function renderStats(stats) {
     <div>${bySource}</div>
     ${alerts.length ? `<div>${alerts.join(' ')}</div>` : ''}
   `;
+}
+
+// O cliente grava "chrome.exe｜Reunião — Google Meet". Na etiqueta o título
+// diz muito mais que o executável, então ele vem primeiro e o .exe some.
+function originLabel(appName) {
+  return appName
+    .split('+')
+    .map((parte) => {
+      const [exe, titulo] = parte.split('｜');
+      const limpo = (titulo || '').trim();
+      if (limpo) return limpo.length > 42 ? `${limpo.slice(0, 41)}…` : limpo;
+      return exe.replace(/\.exe$/i, '');
+    })
+    .join(' + ');
 }
 
 function segmentNode(segment) {
@@ -91,6 +111,9 @@ function segmentNode(segment) {
   } else if (segment.status === 'failed') {
     transcript.classList.add('empty-text');
     transcript.textContent = '(falha ao transcrever)';
+  } else if (segment.status === 'skipped') {
+    transcript.classList.add('empty-text');
+    transcript.textContent = '(não transcrito — fora da lista)';
   } else {
     transcript.classList.add('pending');
     transcript.textContent = 'transcrevendo…';
@@ -104,11 +127,11 @@ function segmentNode(segment) {
   // Mostra a origem e sinaliza o que o relatório ignora — sem isso não dá
   // para entender por que um trecho não apareceu no resumo do dia.
   if (segment.app_name) {
-    const excluded = segment.category === 'entertainment';
+    const excluded = segment.category === 'entertainment' || segment.status === 'skipped';
     chips.push(
       `<span class="tag${excluded ? ' excluded' : ''}" ` +
-      `title="${excluded ? 'Fora do relatório: entretenimento' : 'Origem do áudio'}">` +
-      `${escapeHTML(segment.app_name.replace(/\.exe/g, ''))}</span>`
+      `title="${escapeHTML(segment.app_name)}">` +
+      `${escapeHTML(originLabel(segment.app_name))}</span>`
     );
   }
   if (segment.status !== 'done') {

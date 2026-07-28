@@ -23,6 +23,9 @@ class SegmentStatus(StrEnum):
     TRANSCRIBING = "transcribing"
     DONE = "done"
     FAILED = "failed"
+    # Capturado e guardado, mas fora da lista de permitidos: aparece na
+    # timeline com a origem à vista, sem consumir transcrição.
+    SKIPPED = "skipped"
 
 
 class IngestMeta(BaseModel):
@@ -132,4 +135,6 @@ class DayStats(BaseModel):
     total_speech_ms: int
     pending: int
     failed: int
+    # Capturados mas fora da lista de permitidos — nunca transcritos.
+    skipped: int = 0
     by_source: dict[str, int]

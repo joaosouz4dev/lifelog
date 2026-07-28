@@ -13,9 +13,29 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from .. import db
+from ..classify import should_transcribe
 from ..models import IngestMeta, IngestResponse, SegmentStatus
 
 log = logging.getLogger(__name__)
+
+
+def _deve_transcrever(meta: IngestMeta) -> tuple[bool, str]:
+    """Consulta a configuração para decidir se este segmento vale transcrição."""
+    try:
+        from ..config import get_config
+
+        cfg = get_config()
+        allowlist = cfg.get("capture.allowlist", None)
+        blocklist = cfg.get("capture.blocklist", None)
+    except Exception:
+        # Sem configuração legível, transcrever é o comportamento seguro:
+        # perder uma reunião é pior que gastar com um vídeo.
+        return True, "configuração indisponível"
+
+    return should_transcribe(
+        meta.app_name, meta.source.value,
+        allowlist=allowlist, blocklist=blocklist,
+    )
 
 # Uma sessão é reaproveitada enquanto os segmentos chegarem em sequência.
 # Uma lacuna maior que isto significa que a captura foi interrompida.
@@ -117,6 +137,13 @@ def ingest_segment(data_dir: Path, meta: IngestMeta, audio_bytes: bytes) -> Inge
     path = _audio_path(data_dir, meta)
     path.write_bytes(audio_bytes)
 
+    # Decidido na entrada, não na hora de transcrever: assim o segmento fica
+    # visível na timeline (com a origem à vista) sem consumir transcrição.
+    transcrever, motivo = _deve_transcrever(meta)
+    status_inicial = "pending" if transcrever else "skipped"
+    if not transcrever:
+        log.info("segmento %s ignorado: %s (%s)", meta.client_uid, motivo, meta.app_name)
+
     try:
         with db.transaction() as tx:
             session_id = _find_or_create_session(tx, meta)
@@ -124,8 +151,8 @@ def ingest_segment(data_dir: Path, meta: IngestMeta, audio_bytes: bytes) -> Inge
                 """
                 INSERT INTO segments
                     (session_id, client_uid, started_at, duration_ms, audio_path,
-                     app_name, status)
-                VALUES (?, ?, ?, ?, ?, ?, 'pending')
+                     app_name, status, error)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
@@ -135,6 +162,8 @@ def ingest_segment(data_dir: Path, meta: IngestMeta, audio_bytes: bytes) -> Inge
                     str(path),
                     # Por segmento: o app muda dentro de uma mesma sessão.
                     meta.app_name,
+                    status_inicial,
+                    None if transcrever else motivo,
                     ),
             )
             segment_id = int(cursor.lastrowid)

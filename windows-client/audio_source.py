@@ -35,6 +35,24 @@ SELF_PROCESSES = frozenset({
     "lifelogserver.exe",
 })
 
+# Apps em que o executável sozinho não diz o que está tocando. Um "zoom.exe"
+# já é conclusivo; um "chrome.exe" pode ser reunião ou série.
+_AMBIGUOS = (
+    "chrome", "msedge", "firefox", "brave", "opera", "vivaldi", "safari",
+    "librewolf", "arc", "electron",
+)
+
+# O navegador acrescenta o próprio nome ao fim do título da aba.
+_SUFIXOS_DE_NAVEGADOR = (
+    " - Google Chrome", " - Microsoft​ Edge", " - Microsoft Edge",
+    " — Mozilla Firefox", " - Mozilla Firefox", " - Brave", " - Opera",
+    " - Vivaldi", " - Safari",
+)
+
+
+def _precisa_de_titulo(processo: str) -> bool:
+    return any(chave in processo for chave in _AMBIGUOS)
+
 
 @dataclass(frozen=True)
 class ActiveApp:
@@ -50,12 +68,21 @@ class AudioSourceProbe:
     grave que perder o áudio.
     """
 
-    def __init__(self, cache_seconds: float = CACHE_SECONDS):
+    def __init__(self, cache_seconds: float = CACHE_SECONDS, *, read_titles: bool = True):
         self.cache_seconds = cache_seconds
         self._lock = threading.Lock()
         self._cached: list[ActiveApp] = []
         self._cached_at = 0.0
         self._available: bool | None = None
+
+        self.titles = None
+        if read_titles:
+            try:
+                from window_title import WindowTitleProbe
+
+                self.titles = WindowTitleProbe(cache_seconds)
+            except Exception:
+                log.debug("títulos de janela indisponíveis", exc_info=True)
 
     def _probe(self) -> list[ActiveApp]:
         try:
@@ -120,10 +147,35 @@ class AudioSourceProbe:
 
         Vários apps ao mesmo tempo viram "teams.exe+spotify.exe" — a
         classificação depois decide o que fazer com a combinação.
+
+        Para navegador vai junto o título da janela, porque só o executável
+        não distingue uma reunião no Meet de um vídeo no YouTube:
+
+            "chrome.exe｜Reunião — Google Meet"
         """
         apps = [
             a for a in self.active_apps() if a.process not in SELF_PROCESSES
         ]
         if not apps:
             return None
-        return "+".join(a.process for a in apps[:3])
+
+        rotulos = []
+        for app in apps[:3]:
+            titulo = self._titulo_de(app.process)
+            rotulos.append(f"{app.process}｜{titulo}" if titulo else app.process)
+        return "+".join(rotulos)
+
+    def _titulo_de(self, processo: str) -> str | None:
+        """Título da janela, só para os apps em que ele agrega informação."""
+        if self.titles is None or not _precisa_de_titulo(processo):
+            return None
+        titulo = self.titles.title_for(processo)
+        if not titulo:
+            return None
+        # O sufixo do navegador é ruído: "… - Google Chrome" não classifica
+        # nada e ocupa espaço no rótulo.
+        for sufixo in _SUFIXOS_DE_NAVEGADOR:
+            if titulo.endswith(sufixo):
+                titulo = titulo[: -len(sufixo)]
+                break
+        return titulo.strip(" -–—") or None

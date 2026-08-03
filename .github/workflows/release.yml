@@ -184,6 +184,35 @@ jobs:
           $mb = [math]::Round((Get-Item $setup).Length / 1MB)
           Write-Host "instalador: $setup ($mb MB)"
 
+      - name: Empacotar a extensao de navegador
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+
+          # A versao no manifest tem que casar com a do release, senao o
+          # Chrome nao oferece atualizacao e ninguem descobre que ha uma nova.
+          #
+          # Substituicao por regex em vez de ConvertTo-Json: o cmdlet
+          # reescreve o arquivo inteiro, perde a formatacao e grava BOM, que
+          # o Chrome recusa ao carregar a extensao.
+          $manifesto = "extension\manifest.json"
+          $texto = Get-Content $manifesto -Raw
+          $texto = $texto -replace '("version"\s*:\s*")[^"]*(")', "`${1}$v`${2}"
+          [System.IO.File]::WriteAllText(
+            (Resolve-Path $manifesto), $texto, (New-Object System.Text.UTF8Encoding $false)
+          )
+          $conferir = (Get-Content $manifesto -Raw | ConvertFrom-Json).version
+          if ($conferir -ne $v) { throw "manifest ficou com versao '$conferir', esperado '$v'" }
+          Write-Host "extension/manifest.json -> $v"
+
+          $zip = "installer\output\Lifelog-Extensao-$v.zip"
+          New-Item -ItemType Directory -Force -Path "installer\output" | Out-Null
+          Compress-Archive -Path "extension\*" -DestinationPath $zip -Force
+
+          if (-not (Test-Path $zip)) { throw "Extensao nao empacotada: $zip" }
+          $kb = [math]::Round((Get-Item $zip).Length / 1KB)
+          Write-Host "extensao: $zip ($kb KB)"
+
       - name: Publicar release
         # A propria action cria a tag via API do GitHub. Nao usamos
         # `git push origin <tag>` porque o GITHUB_TOKEN e bloqueado ao empurrar
@@ -194,7 +223,9 @@ jobs:
           tag_name: ${{ steps.ver.outputs.tag }}
           target_commitish: ${{ github.sha }}
           name: Lifelog ${{ steps.ver.outputs.version }}
-          files: installer/output/Lifelog-Setup-${{ steps.ver.outputs.version }}.exe
+          files: |
+            installer/output/Lifelog-Setup-${{ steps.ver.outputs.version }}.exe
+            installer/output/Lifelog-Extensao-${{ steps.ver.outputs.version }}.zip
           body: |
             ## Lifelog ${{ steps.ver.outputs.version }} — Diário de áudio com transcrição local
 
@@ -209,6 +240,15 @@ jobs:
 
             ### Na primeira transcrição
             O modelo de reconhecimento de fala (~3 GB) é baixado uma vez. Enquanto isso o áudio fica em fila e nada se perde.
+
+            ### Extensão de navegador (opcional)
+            **Lifelog-Extensao-${{ steps.ver.outputs.version }}.zip** — só faz sentido se você usar o modo "gravar apenas em reuniões".
+
+            O Lifelog reconhece Zoom e Teams instalados sozinho. No navegador não consegue: um Meet e um vídeo do YouTube são o mesmo `chrome.exe`, e com várias janelas abertas a reunião pode passar despercebida. A extensão sabe qual aba está em chamada.
+
+            Para instalar: descompacte, abra `chrome://extensions`, ligue o **Modo do desenvolvedor** e clique em **Carregar sem compactação**.
+
+            Ela reporta só três coisas ao Lifelog local: se há reunião, em qual serviço e o título da aba. Nunca o conteúdo da página — não há permissão para lê-lo.
 
             ### Privacidade
             O áudio e as transcrições ficam **apenas neste computador**. A transcrição roda localmente, sem enviar nada para a internet. Relatórios com IA são opcionais e desligados por padrão.

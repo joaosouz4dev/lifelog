@@ -6,6 +6,9 @@ Sobe com:  uvicorn server.main:app --reload
 from __future__ import annotations
 
 import logging
+import tempfile
+import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -23,6 +26,7 @@ from .hub.stt import build_stt_chain
 from .models import (
     CaptureConfig,
     DayStats,
+    Dictation,
     HubStatus,
     IngestMeta,
     IngestResponse,
@@ -116,6 +120,86 @@ async def ingest(
     except Exception as exc:
         log.exception("falha ao ingerir %s", parsed.client_uid)
         raise HTTPException(500, f"falha ao gravar o segmento: {exc}") from exc
+
+
+# ──────────────────────────────── ditado ────────────────────────────────
+
+# Uma tecla travada não pode virar uma transcrição de meia hora.
+MAX_DITADO_MS = 120_000
+
+
+@app.post("/api/dictate", response_model=Dictation)
+async def dictate(audio: UploadFile = File(...)) -> Dictation:
+    """Transcreve na hora e devolve o texto na mesma resposta.
+
+    Ao contrário de `/ingest`, que é assíncrono por desenho e responde
+    `pending`, aqui quem chamou está com a tecla na mão esperando o texto para
+    digitar. Nada disso entra na timeline: um ditado é comando, não registro
+    de vida.
+    """
+    if stt_chain is None:
+        raise HTTPException(503, "hub não inicializado")
+
+    payload = await audio.read()
+    if not payload:
+        raise HTTPException(422, "áudio vazio")
+    if len(payload) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"áudio maior que {MAX_UPLOAD_BYTES} bytes")
+
+    try:
+        ingest_pipeline.validate_audio(payload)
+    except ingest_pipeline.InvalidAudio as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    # O provedor recebe um Path, não bytes — os dois provedores leem do disco.
+    tmp = Path(tempfile.gettempdir()) / f"lifelog-ditado-{uuid.uuid4().hex}.opus"
+    tmp.write_bytes(payload)
+
+    inicio = time.monotonic()
+    try:
+        result = await stt_chain.run(
+            lambda p: p.transcribe(tmp, cfg.get("stt.language", "pt")),
+            cost_estimator=lambda p: p.estimate_cost_cents(len(payload) // 6),
+        )
+    except BudgetExceeded as exc:
+        raise HTTPException(429, str(exc)) from exc
+    except ProviderError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    finally:
+        # Sem isto, ditar todo dia enche o disco de temporários.
+        tmp.unlink(missing_ok=True)
+
+    texto = (result.value.text or "").strip()
+    log.info("ditado transcrito por %s em %dms: %r", result.provider,
+             result.latency_ms, texto[:60])
+    return Dictation(
+        text=texto,
+        provider=result.provider,
+        latency_ms=int((time.monotonic() - inicio) * 1000),
+    )
+
+
+@app.post("/api/dictate/aquecer")
+async def aquecer_ditado() -> dict:
+    """Carrega o modelo antes de o usuário terminar de falar.
+
+    Com `idle_unload_seconds` o modelo sai da memória depois de um tempo
+    parado, e voltar custa ~7s. Chamado no momento em que a tecla é
+    pressionada, esse custo some: o modelo sobe enquanto a pessoa fala.
+    """
+    if stt_chain is None:
+        raise HTTPException(503, "hub não inicializado")
+
+    for provider in stt_chain.providers:
+        preparar = getattr(provider, "_get_model", None)
+        if preparar is None:
+            continue
+        try:
+            await preparar()
+            return {"aquecido": provider.name}
+        except Exception:
+            log.debug("falha ao aquecer %s", provider.name, exc_info=True)
+    return {"aquecido": None}
 
 
 # ──────────────────────────────── consulta ────────────────────────────────

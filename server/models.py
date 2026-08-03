@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -164,13 +165,21 @@ class MeetingReport(BaseModel):
 
 
 class MeetingState(BaseModel):
-    """Estado em vigor, já considerando a expiração."""
+    """Estado em vigor, já considerando a expiração e o modo manual."""
 
     ativa: bool
     servico: str | None = None
     titulo: str | None = None
     # Quanto falta para o relato expirar. Zero significa "não há reunião".
     expira_em_s: float = 0
+    # "auto" | "sempre" | "nunca" — o manual sobrepõe a detecção.
+    modo: str = "auto"
+
+
+class CaptureMode(BaseModel):
+    """Sobreposição manual da detecção de reunião."""
+
+    modo: Literal["auto", "sempre", "nunca"]
 
 
 class Dictation(BaseModel):

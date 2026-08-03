@@ -1,0 +1,207 @@
+/* Mesma paleta da interface web: o popup é o mesmo produto, visto de outro
+   lugar. Cores de app.css. */
+:root {
+  --bg: #faf9f7;
+  --surface: #ffffff;
+  --border: #e3e0da;
+  --text: #1c1b19;
+  --muted: #6b6862;
+  --accent: #b45f3f;
+  --ok: #2e7d52;
+  --err: #b43f3f;
+  --radius: 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17161a;
+    --surface: #201f24;
+    --border: #34323a;
+    --text: #ecebe8;
+    --muted: #9a968f;
+    --accent: #e08a63;
+    --ok: #5cba87;
+    --err: #dd6a6a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  width: 330px;
+  margin: 0;
+  padding: 0 0 .8rem;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .7rem .9rem;
+  border-bottom: 1px solid var(--border);
+}
+
+header img { border-radius: 50%; }
+h1 { margin: 0; font-size: .95rem; letter-spacing: .02em; }
+.versao { margin-left: auto; font-size: .7rem; color: var(--muted); }
+
+/* ───────────────────────── estado ───────────────────────── */
+
+.estado {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  padding: .8rem .9rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.estado strong { display: block; font-size: .9rem; }
+.estado small { color: var(--muted); font-size: .75rem; }
+
+/* O ponto pulsa enquanto grava: movimento diz "acontecendo agora" melhor
+   que qualquer palavra. */
+.ponto {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.ponto.gravando {
+  background: var(--err);
+  animation: pulsar 1.8s ease-in-out infinite;
+}
+
+.ponto.espera { background: var(--muted); }
+.ponto.erro { background: var(--accent); }
+
+@keyframes pulsar {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgb(180 63 63 / .5); }
+  50% { opacity: .75; box-shadow: 0 0 0 5px rgb(180 63 63 / 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ponto.gravando { animation: none; }
+}
+
+/* ───────────────────────── modos ───────────────────────── */
+
+.modos {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: .35rem;
+  padding: .8rem .9rem;
+}
+
+.modo {
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+  padding: .5rem .3rem;
+  font: inherit;
+  font-size: .78rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-align: center;
+}
+
+.modo small { color: var(--muted); font-size: .65rem; line-height: 1.25; }
+.modo:hover { border-color: var(--accent); }
+
+.modo.ativo {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.modo.ativo small { color: rgb(255 255 255 / .8); }
+
+/* ───────────────────────── números ───────────────────────── */
+
+.numeros {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: .5rem;
+  padding: 0 .9rem .8rem;
+  text-align: center;
+}
+
+.numeros b { display: block; font-size: 1.05rem; }
+.numeros small { color: var(--muted); font-size: .68rem; }
+
+/* ───────────────────── últimas transcrições ───────────────────── */
+
+.recentes { padding: 0 .9rem; }
+
+.recentes h2 {
+  margin: 0 0 .4rem;
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+}
+
+#lista-recentes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+#lista-recentes li {
+  padding: .4rem .55rem;
+  margin-bottom: .25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: .78rem;
+  /* Transcrição longa não pode esticar o popup. */
+  overflow-wrap: anywhere;
+}
+
+#lista-recentes .hora {
+  display: block;
+  color: var(--muted);
+  font-size: .66rem;
+  font-variant-numeric: tabular-nums;
+}
+
+#lista-recentes .vazio {
+  color: var(--muted);
+  font-style: italic;
+  background: none;
+  border: none;
+}
+
+/* ───────────────────────── rodapé ───────────────────────── */
+
+footer { padding: .8rem .9rem 0; }
+
+#abrir {
+  width: 100%;
+  padding: .5rem;
+  font: inherit;
+  font-size: .8rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+#abrir:hover { border-color: var(--accent); }
+
+.erro {
+  margin: .6rem 0 0;
+  font-size: .75rem;
+  color: var(--err);
+}

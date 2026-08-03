@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+
+<header>
+  <img src="icon48.png" alt="" width="20" height="20">
+  <h1>Lifelog</h1>
+  <span id="versao" class="versao"></span>
+</header>
+
+<!-- Estado da gravação: a primeira coisa que a pessoa quer saber. -->
+<section id="estado" class="estado">
+  <span class="ponto" id="ponto"></span>
+  <div>
+    <strong id="estado-titulo">Verificando…</strong>
+    <small id="estado-motivo"></small>
+  </div>
+</section>
+
+<!-- Controle manual, três estados. -->
+<section class="modos">
+  <button class="modo" data-modo="auto">
+    Automático
+    <small>grava em reuniões</small>
+  </button>
+  <button class="modo" data-modo="sempre">
+    Gravar
+    <small>ignora a detecção</small>
+  </button>
+  <button class="modo" data-modo="nunca">
+    Não gravar
+    <small>silêncio total</small>
+  </button>
+</section>
+
+<!-- Números do dia. -->
+<section class="numeros">
+  <div><b id="n-segmentos">–</b><small>segmentos</small></div>
+  <div><b id="n-fala">–</b><small>de fala</small></div>
+  <div><b id="n-fila">–</b><small>na fila</small></div>
+</section>
+
+<!-- Últimas transcrições: confirma que está funcionando sem abrir a interface. -->
+<section class="recentes">
+  <h2>Últimas transcrições</h2>
+  <ul id="lista-recentes"><li class="vazio">Carregando…</li></ul>
+</section>
+
+<footer>
+  <button id="abrir">Abrir a timeline completa</button>
+  <p id="erro" class="erro" hidden></p>
+</footer>
+
+<script src="popup.js"></script>
+</body>
+</html>

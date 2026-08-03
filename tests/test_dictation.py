@@ -173,14 +173,9 @@ def _controlador():
     return DictationController("http://127.0.0.1:8000", DictationTap())
 
 
-def test_digita_quando_o_programa_e_o_mesmo(entrega, monkeypatch):
-    """O caso normal. Comparar handles em vez de processos quebrava aqui:
-    dentro de um mesmo app a janela em foco muda a cada aba ou popup."""
-    import dictation
-
-    monkeypatch.setattr(dictation, "_processo_da_janela", lambda h: 4242)
+def test_o_texto_vai_para_o_campo(entrega):
+    """O ditado existe para escrever onde o cursor está."""
     ctrl = _controlador()
-    ctrl._alvo_no_inicio = 4242
 
     ctrl._entregar("bom dia")
 
@@ -188,25 +183,29 @@ def test_digita_quando_o_programa_e_o_mesmo(entrega, monkeypatch):
     assert ctrl.ultimo_erro is None
 
 
-def test_copia_quando_o_foco_mudou_de_programa(entrega, monkeypatch):
-    """Digitar no programa errado pode executar comandos num terminal."""
-    import dictation
+def test_digita_mesmo_se_o_foco_mudou(entrega):
+    """Houve uma verificação de foco aqui, e ela errava na prática.
 
-    monkeypatch.setattr(dictation, "_processo_da_janela", lambda h: 9999)
+    Dentro de um mesmo programa o foco troca o tempo todo (abas, popups, a
+    própria combinação de teclas), e o texto quase nunca chegava ao campo —
+    ia para o clipboard. Entre proteger de um cenário raro e funcionar no
+    comum, o comum ganha.
+    """
     ctrl = _controlador()
-    ctrl._alvo_no_inicio = 4242
-
-    ctrl._entregar("bom dia")
-
-    assert entrega.digitado == []
-    assert entrega.copiado == ["bom dia"]
-    assert "outro programa" in ctrl.ultimo_erro
-
-
-def test_sem_alvo_guardado_entrega_direto(entrega):
-    ctrl = _controlador()
-    ctrl._alvo_no_inicio = None
 
     ctrl._entregar("bom dia")
 
     assert entrega.digitado == ["bom dia"]
+    assert entrega.copiado == []
+
+
+def test_falha_na_digitacao_e_registrada(entrega, monkeypatch):
+    """Sem isto, uma recusa do Windows viraria silêncio outra vez."""
+    import text_input
+
+    monkeypatch.setattr(text_input, "digitar", lambda t: False)
+    ctrl = _controlador()
+
+    ctrl._entregar("bom dia")
+
+    assert ctrl.ultimo_erro == "não foi possível digitar"

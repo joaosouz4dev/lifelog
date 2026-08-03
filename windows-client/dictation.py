@@ -93,7 +93,6 @@ class DictationController:
         self.ultimo_erro: str | None = None
         self.gravando = False
         self._lock = threading.Lock()
-        self._alvo_no_inicio = None
 
     # ──────────────────────────── ciclo da tecla ────────────────────────────
 
@@ -103,9 +102,6 @@ class DictationController:
                 return
             self.gravando = True
 
-        # Guarda quem estava em foco: se a pessoa trocar de janela no meio da
-        # fala, digitar no destino errado pode ser desastroso.
-        self._alvo_no_inicio = _processo_da_janela(_janela_em_foco())
         self.ultimo_erro = None
         self.tap.comecar()
         sounds.tocar(sounds.INICIO)
@@ -186,9 +182,19 @@ class DictationController:
         return (resposta.json().get("text") or "").strip()
 
     def _entregar(self, texto: str) -> None:
-        """Digita no campo focado, ou deixa no clipboard se o alvo mudou."""
+        """Digita no campo em foco.
+
+        Sempre digita, mesmo que o foco tenha mudado desde o início da fala.
+        Houve uma verificação que desviava para o clipboard nesse caso, mas
+        ela errava na prática: dentro de um mesmo programa o foco troca o
+        tempo todo, e o texto quase nunca chegava ao campo. Entre proteger de
+        um cenário raro e funcionar no comum, o comum ganha.
+
+        O risco fica registrado: se você trocar de janela nos ~2s entre soltar
+        a tecla e o texto voltar, ele é digitado onde o cursor estiver.
+        """
         try:
-            from text_input import copiar, digitar
+            from text_input import digitar
         except ImportError:
             # Não engolir em silêncio: foi assim que a falha de import passou
             # despercebida — o ditado transcrevia e o texto sumia.
@@ -196,45 +202,8 @@ class DictationController:
             self.ultimo_erro = "digitação indisponível"
             return
 
-        # Compara o processo dono, não o handle: um mesmo app troca de janela
-        # o tempo todo (abas, popups, caixas de busca), e comparar handles
-        # mandava quase tudo para o clipboard. O que importa é não digitar
-        # num programa diferente daquele em que a pessoa estava.
-        if self._alvo_no_inicio is not None:
-            if _processo_da_janela(_janela_em_foco()) != self._alvo_no_inicio:
-                copiar(texto)
-                self.ultimo_erro = "outro programa em foco — texto copiado"
-                log.info("ditado: o foco mudou de programa; texto no clipboard")
-                return
-
-        digitar(texto)
+        if not digitar(texto):
+            self.ultimo_erro = "não foi possível digitar"
+            log.warning("ditado: a digitação falhou")
 
 
-def _janela_em_foco():
-    """Handle da janela em primeiro plano, ou None fora do Windows."""
-    try:
-        import ctypes
-
-        return ctypes.windll.user32.GetForegroundWindow()
-    except Exception:
-        return None
-
-
-def _processo_da_janela(hwnd) -> int | None:
-    """PID do dono da janela.
-
-    O ditado compara processos, não handles: dentro de um mesmo programa a
-    janela em foco muda o tempo todo (abas, popups, caixa de busca), e
-    comparar handles mandava quase todo ditado para o clipboard.
-    """
-    if hwnd is None:
-        return None
-    try:
-        import ctypes
-        import ctypes.wintypes as wt
-
-        pid = wt.DWORD()
-        ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-        return pid.value or None
-    except Exception:
-        return None

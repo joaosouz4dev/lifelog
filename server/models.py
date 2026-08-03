@@ -155,6 +155,17 @@ def _limpar_termos(termos: list[str]) -> list[str]:
     return vistos[:MAX_TERMOS]
 
 
+class Dictation(BaseModel):
+    """Resposta do ditado: o texto sai na mesma requisição.
+
+    Sem `id` nem `status`: nada disso vira segmento na timeline.
+    """
+
+    text: str
+    provider: str
+    latency_ms: int
+
+
 class CaptureConfig(BaseModel):
     """O que deve ser transcrito, editável pela interface.
 

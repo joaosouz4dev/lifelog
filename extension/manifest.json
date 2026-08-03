@@ -12,6 +12,15 @@
     "service_worker": "background.js"
   },
 
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Lifelog — estado da gravação",
+    "default_icon": {
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+
   "icons": {
     "48": "icon48.png",
     "128": "icon128.png"

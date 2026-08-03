@@ -26,6 +26,7 @@ from .hub.llm import build_llm_chain
 from .hub.stt import build_stt_chain
 from .models import (
     CaptureConfig,
+    CaptureMode,
     DayStats,
     Dictation,
     HubStatus,
@@ -92,7 +93,7 @@ app = FastAPI(title="Lifelog", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"^(chrome|moz)-extension://.*$",
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT"],
     allow_headers=["Content-Type"],
 )
 
@@ -405,6 +406,18 @@ def report_meeting_state(relato: MeetingReport) -> MeetingState:
 @app.get("/api/meeting/state", response_model=MeetingState)
 def get_meeting_state() -> MeetingState:
     """Consultado pelo cliente Windows para decidir se grava."""
+    return MeetingState(**meeting_state.atual())
+
+
+@app.put("/api/meeting/mode", response_model=MeetingState)
+def set_capture_mode(escolha: CaptureMode) -> MeetingState:
+    """Sobrepõe a detecção de reunião: auto, sempre ou nunca.
+
+    Fica em memória de propósito: é uma decisão do momento, não config
+    permanente. Reiniciar volta ao automático — ninguém quer descobrir
+    semanas depois que deixou em "nunca" e perdeu tudo.
+    """
+    meeting_state.definir_modo(escolha.modo)
     return MeetingState(**meeting_state.atual())
 
 

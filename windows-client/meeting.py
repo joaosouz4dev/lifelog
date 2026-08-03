@@ -27,6 +27,11 @@ import time
 
 log = logging.getLogger("meeting")
 
+# O httpx loga cada request em INFO. Consultando o servidor a cada 2s, isso
+# afogaria o log em linhas idênticas e esconderia o que importa — quando o
+# gate abriu e fechou.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 # Chave onde o Windows registra o uso do microfone por aplicativo.
 _CONSENT = (
     r"SOFTWARE\Microsoft\Windows\CurrentVersion"

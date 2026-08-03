@@ -153,6 +153,23 @@ capture:
     - keepass
 
 # ─────────────────────────────────────────────────────────────
+# Ditado: segure o atalho, fale, solte, e o texto vai para o
+# campo que estiver em foco. Esc no meio cancela.
+#
+# O áudio vem da trilha do microfone que já está aberta, então
+# funciona mesmo com a captura pausada — e o que você dita não
+# entra na timeline: é comando, não registro de vida.
+# ─────────────────────────────────────────────────────────────
+dictation:
+  enabled: true
+  # Se outro programa já usar esta combinação, o registro falha e a bandeja
+  # avisa. A captura continua normal — o ditado é acessório.
+  hotkey: ctrl+shift+space
+  # Teto de segurança: uma tecla travada não pode virar uma transcrição de
+  # meia hora.
+  max_seconds: 120
+
+# ─────────────────────────────────────────────────────────────
 # Privacidade e retenção
 # ─────────────────────────────────────────────────────────────
 retention:

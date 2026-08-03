@@ -55,8 +55,10 @@ Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"
 Name: "{group}\Desinstalar o {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"; Tasks: desktopicon
 ; A bandeja sobe o servidor quando precisa, entao um atalho na inicializacao
-; basta — nao ha servico para registrar.
-Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"; Tasks: startup
+; basta — nao ha servico para registrar. O --startup silencia o aviso de
+; "ja esta em execucao": no logon ninguem pediu para abrir, entao um popup
+; modal seria so um estorvo a cada boot.
+Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"; Parameters: "--startup"; Tasks: startup
 
 [Run]
 Filename: "{app}\{#MyAppExe}"; Description: "Abrir o {#MyAppName} agora"; Flags: nowait postinstall skipifsilent
@@ -64,6 +66,10 @@ Filename: "{app}\{#MyAppExe}"; Description: "Abrir o {#MyAppName} agora"; Flags:
 [UninstallRun]
 ; Encerra a captura antes de remover os arquivos, senao os .exe ficam em uso.
 Filename: "{cmd}"; Parameters: "/C taskkill /F /IM {#MyAppExe} /IM {#MyServerExe} /IM {#MyUiExe}"; Flags: runhidden; RunOnceId: "PararLifelog"
+; Quem testou pelo codigo-fonte tem tarefas agendadas do scripts\install.ps1,
+; que rodam como pythonw.exe e sobrevivem ao taskkill acima. Sem apaga-las, o
+; Lifelog ressuscita no proximo logon mesmo depois de desinstalado.
+Filename: "{cmd}"; Parameters: "/C schtasks /Delete /TN ""Lifelog - Captura"" /F & schtasks /Delete /TN ""Lifelog - Servidor"" /F"; Flags: runhidden; RunOnceId: "RemoverTarefasAgendadas"
 
 [Messages]
 brazilianportuguese.WelcomeLabel2=Isto vai instalar o [name/ver] no seu computador.%n%nO Lifelog grava o microfone e o audio do sistema, transcreve tudo localmente e gera relatorios do seu dia.%n%nSuas gravacoes ficam apenas neste computador.

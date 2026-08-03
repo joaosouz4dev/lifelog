@@ -94,6 +94,26 @@ Write-Host ""
 Write-Host "Instalando o Lifelog..." -ForegroundColor Cyan
 Write-Host "  projeto: $ROOT"
 
+# As tarefas ficam amarradas a ESTA pasta. Mover ou apagar o repositorio deixa
+# tarefas orfas que tentam subir um caminho inexistente a cada logon, e nenhum
+# desinstalador conhece — foi assim que o Lifelog ressuscitou depois de
+# desinstalado. A saida e sempre: install.ps1 -Uninstall
+Write-Host "  aviso  : as tarefas apontam para esta pasta." -ForegroundColor DarkYellow
+Write-Host "           antes de move-la ou apaga-la, rode: install.ps1 -Uninstall" -ForegroundColor DarkYellow
+
+# O app empacotado ja sobe sozinho pelo atalho da inicializacao. Somar as duas
+# formas faz duas bandejas competirem no logon, e a perdedora abre um popup.
+$instalado = Join-Path $env:LOCALAPPDATA 'Programs\Lifelog\Lifelog.exe'
+if (Test-Path $instalado) {
+    Write-Host ""
+    Write-Host "  O Lifelog empacotado ja esta instalado nesta maquina:" -ForegroundColor Yellow
+    Write-Host "    $instalado" -ForegroundColor Yellow
+    Write-Host "  Ele ja inicia sozinho. Registrar as tarefas aqui faria duas" -ForegroundColor Yellow
+    Write-Host "  bandejas competirem no logon. Desinstale um dos dois." -ForegroundColor Yellow
+    Write-Host ""
+    exit 1
+}
+
 $pythonw = Get-PythonwPath
 Write-Host "  python : $pythonw"
 
@@ -122,7 +142,7 @@ Register-ScheduledTask -TaskName $TASK_SERVER -Force `
         -Argument "`"$launcher`"" `
         -WorkingDirectory $ROOT) `
     -Trigger $trigger -Settings $settings -Principal $principal `
-    -Description 'Servidor do Lifelog: transcricao, relatorios e interface web.' | Out-Null
+    -Description "Servidor do Lifelog: transcricao, relatorios e interface web. Criada por $ROOT\scripts\install.ps1 — para remover: install.ps1 -Uninstall" | Out-Null
 Write-Host "  registrada: $TASK_SERVER" -ForegroundColor Green
 
 # -- bandeja --
@@ -131,12 +151,14 @@ Write-Host "  registrada: $TASK_SERVER" -ForegroundColor Green
 $trayTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $trayTrigger.Delay = 'PT30S'
 
+# O --startup silencia o aviso de "ja esta em execucao": no logon ninguem
+# pediu para abrir o app, entao um popup modal seria so um estorvo.
 Register-ScheduledTask -TaskName $TASK_TRAY -Force `
     -Action (New-ScheduledTaskAction -Execute $pythonw `
-        -Argument "`"$ROOT\windows-client\tray.py`"" `
+        -Argument "`"$ROOT\windows-client\tray.py`" --startup" `
         -WorkingDirectory $ROOT) `
     -Trigger $trayTrigger -Settings $settings -Principal $principal `
-    -Description 'Captura de audio do Lifelog, com icone de pausa na bandeja.' | Out-Null
+    -Description "Captura de audio do Lifelog, com icone de pausa na bandeja. Criada por $ROOT\scripts\install.ps1 — para remover: install.ps1 -Uninstall" | Out-Null
 Write-Host "  registrada: $TASK_TRAY" -ForegroundColor Green
 
 if ($StartNow) {

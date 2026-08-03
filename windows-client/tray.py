@@ -301,18 +301,24 @@ class LifelogTray:
         return 0
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
 
+    # Início automático (atalho da inicialização, tarefa agendada). Aqui
+    # ninguém pediu para abrir o app, então um aviso modal seria só um
+    # estorvo a cada logon.
+    automatico = "--startup" in (sys.argv[1:] if argv is None else argv)
+
     # Duas bandejas disputam o mesmo dispositivo de áudio e a mesma fila —
     # o resultado parece "não está capturando". Sair é melhor que competir.
     if not single_instance.acquire():
         log.info("o Lifelog já está rodando — veja o ícone na bandeja")
-        _warn_already_running()
+        if not automatico:
+            _warn_already_running()
         return 0
 
     try:

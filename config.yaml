@@ -164,7 +164,11 @@ dictation:
   enabled: true
   # Se outro programa já usar esta combinação, o registro falha e a bandeja
   # avisa. A captura continua normal — o ditado é acessório.
-  hotkey: ctrl+shift+space
+  #
+  # Ctrl+Alt+D e não Ctrl+Shift+Space: variações de Ctrl+Shift são usadas
+  # pelo seletor de idioma do Windows e por vários editores, e a tecla de
+  # espaço torna difícil saber se o atalho pegou ou se você só deu um espaço.
+  hotkey: ctrl+alt+d
   # Teto de segurança: uma tecla travada não pode virar uma transcrição de
   # meia hora.
   max_seconds: 120

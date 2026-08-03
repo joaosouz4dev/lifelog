@@ -31,6 +31,15 @@ MAX_SEGUNDOS = 120
 # servidor nem sobrescrever o que estava no campo.
 MIN_SEGUNDOS = 0.25
 
+# Volume de pico mínimo para considerar que houve fala.
+#
+# Serve só para descartar silêncio quase absoluto — a tecla apertada sem
+# querer, ou o microfone mudo. NÃO separa a sua voz do som que vaza dos
+# alto-falantes: medido em segmentos reais, o áudio do microfone fica entre
+# 0,01 e 0,16 de pico enquanto o do sistema fica entre 0,19 e 0,53. Um piso
+# alto barraria justamente a fala.
+PICO_MINIMO = 0.008
+
 
 class DictationTap:
     """Buffer que a trilha do microfone alimenta enquanto o ditado grava.
@@ -73,7 +82,18 @@ class DictationTap:
 
         if amostras < MIN_SEGUNDOS * SAMPLE_RATE:
             return None
-        return np.concatenate(pedacos)
+
+        audio = np.concatenate(pedacos)
+
+        # Só vazamento dos alto-falantes para o microfone. Sem este corte o
+        # Whisper transcreve o vídeo que estava tocando e o texto vai parar
+        # no campo como se fosse fala do usuário.
+        pico = float(np.abs(audio).max())
+        if pico < PICO_MINIMO:
+            log.info("ditado: som fraco demais (pico %.3f) — provavelmente não é fala", pico)
+            return None
+
+        return audio
 
     def cancelar(self) -> None:
         self._ativo.clear()
@@ -92,6 +112,9 @@ class DictationController:
         self.ultimo_texto: str | None = None
         self.ultimo_erro: str | None = None
         self.gravando = False
+        # Um ditado transcrevendo bloqueia o próximo: sem isso, duas
+        # respostas voltavam juntas e eram digitadas coladas.
+        self._processando = False
         self._lock = threading.Lock()
 
     # ──────────────────────────── ciclo da tecla ────────────────────────────
@@ -99,6 +122,11 @@ class DictationController:
     def on_press(self) -> None:
         with self._lock:
             if self.gravando:
+                return
+            # Um ditado ainda transcrevendo: aceitar outro faria as duas
+            # respostas chegarem juntas e serem digitadas coladas no campo.
+            if self._processando:
+                log.info("ditado: aguarde o anterior terminar")
                 return
             self.gravando = True
 
@@ -125,6 +153,8 @@ class DictationController:
 
         sounds.tocar(sounds.FIM)
 
+        with self._lock:
+            self._processando = True
         threading.Thread(target=self._processar, args=(audio,), daemon=True).start()
 
     def cancelar(self) -> None:
@@ -146,6 +176,13 @@ class DictationController:
             log.debug("falha ao aquecer o modelo", exc_info=True)
 
     def _processar(self, audio: np.ndarray) -> None:
+        try:
+            self._processar_sem_liberar(audio)
+        finally:
+            with self._lock:
+                self._processando = False
+
+    def _processar_sem_liberar(self, audio: np.ndarray) -> None:
         inicio = time.monotonic()
         try:
             texto = self._transcrever(audio)

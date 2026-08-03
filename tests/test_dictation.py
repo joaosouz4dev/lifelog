@@ -20,6 +20,12 @@ from dictation import SAMPLE_RATE, DictationTap  # noqa: E402
 
 
 def _fala(segundos: float) -> np.ndarray:
+    """Áudio audível, não silêncio: o buffer descarta o que é quase mudo."""
+    n = int(SAMPLE_RATE * segundos)
+    return (np.sin(np.arange(n) * 0.1) * 0.3).astype(np.float32)
+
+
+def _silencio(segundos: float) -> np.ndarray:
     return np.zeros(int(SAMPLE_RATE * segundos), dtype=np.float32)
 
 
@@ -57,6 +63,15 @@ def test_soltar_a_tecla_sem_falar_nao_devolve_nada():
     tap = DictationTap()
     tap.comecar()
     tap.alimentar(_fala(0.05))
+
+    assert tap.terminar() is None
+
+
+def test_silencio_e_descartado_mesmo_sendo_longo():
+    """Microfone mudo ou tecla apertada sem querer não vira transcrição."""
+    tap = DictationTap()
+    tap.comecar()
+    tap.alimentar(_silencio(3.0))
 
     assert tap.terminar() is None
 

@@ -145,6 +145,13 @@ class HotkeyListener(threading.Thread):
                 break
             time.sleep(INTERVALO_POLLING)
 
+        # Segurar a tecla enfileira WM_HOTKEY repetidos, mesmo com
+        # MOD_NOREPEAT. Sem descartá-los, cada um vira um ditado novo: uma
+        # única fala saía como três transcrições coladas no campo.
+        descartados = self._drenar_repeticoes(user32)
+        if descartados:
+            log.debug("descartadas %s repetições do atalho", descartados)
+
         try:
             if cancelado:
                 self.on_cancel()
@@ -152,6 +159,18 @@ class HotkeyListener(threading.Thread):
                 self.on_release()
         except Exception:
             log.exception("falha no fim do ditado")
+
+    @staticmethod
+    def _drenar_repeticoes(user32) -> int:
+        """Remove da fila os WM_HOTKEY acumulados enquanto a tecla estava presa."""
+        msg = wt.MSG()
+        removidos = 0
+        # PM_REMOVE = 0x0001: tira a mensagem da fila em vez de só espiar.
+        while user32.PeekMessageW(
+            ctypes.byref(msg), None, WM_HOTKEY, WM_HOTKEY, 0x0001
+        ):
+            removidos += 1
+        return removidos
 
     def stop(self) -> None:
         self._parar.set()

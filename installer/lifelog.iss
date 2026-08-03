@@ -36,6 +36,11 @@ WizardStyle=modern
 ; e pedir UAC afastaria quem so quer testar.
 PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64compatible
+; Sem isto, instalar por cima com o Lifelog aberto trava num "os arquivos
+; estao em uso, tente novamente" que so sai matando o processo na mao.
+; O Inno fecha os processos que seguram os arquivos e os reabre no fim.
+CloseApplications=yes
+RestartApplications=yes
 
 [Languages]
 Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
@@ -75,6 +80,23 @@ Filename: "{cmd}"; Parameters: "/C schtasks /Delete /TN ""Lifelog - Captura"" /F
 brazilianportuguese.WelcomeLabel2=Isto vai instalar o [name/ver] no seu computador.%n%nO Lifelog grava o microfone e o audio do sistema, transcreve tudo localmente e gera relatorios do seu dia.%n%nSuas gravacoes ficam apenas neste computador.
 
 [Code]
+// Encerra o Lifelog antes de sobrescrever os arquivos.
+//
+// O CloseApplications do Inno usa o Restart Manager, que nao enxerga
+// processos sem janela — e o LifelogServer.exe roda invisivel. Sem este
+// taskkill, instalar por cima trava num "os arquivos estao em uso, tente
+// novamente" que so sai matando o processo na mao.
+procedure PararLifelog();
+var
+  Codigo: Integer;
+begin
+  Exec(ExpandConstant('{cmd}'),
+       '/C taskkill /F /IM {#MyAppExe} /IM {#MyServerExe} /IM {#MyUiExe}',
+       '', SW_HIDE, ewWaitUntilTerminated, Codigo);
+  // Um instante para o Windows liberar os handles dos arquivos.
+  Sleep(1200);
+end;
+
 // Aviso de privacidade antes de instalar. Um app que grava audio continuamente
 // tem que dizer isso de forma explicita, nao escondido num EULA.
 function InitializeSetup(): Boolean;
@@ -87,12 +109,31 @@ begin
     mbConfirmation, MB_YESNO) = IDYES;
 end;
 
+// ssInstall e o momento certo: o usuario ja confirmou tudo e os arquivos
+// ainda nao comecaram a ser copiados.
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssInstall then
+    PararLifelog();
+end;
+
 // Os dados ficam fora de {app} de proposito: desinstalar nao pode apagar
 // meses de gravacao. Perguntamos em vez de decidir pelo usuario.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   DataDir: String;
+  Codigo: Integer;
 begin
+  // Antes de remover: o [UninstallRun] roda tarde demais, quando o Inno ja
+  // tentou apagar os arquivos e falhou por estarem em uso.
+  if CurUninstallStep = usUninstall then
+  begin
+    Exec(ExpandConstant('{cmd}'),
+         '/C taskkill /F /IM {#MyAppExe} /IM {#MyServerExe} /IM {#MyUiExe}',
+         '', SW_HIDE, ewWaitUntilTerminated, Codigo);
+    Sleep(1200);
+  end;
+
   if CurUninstallStep = usPostUninstall then
   begin
     DataDir := ExpandConstant('{localappdata}\Lifelog');

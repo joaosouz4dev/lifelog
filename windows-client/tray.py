@@ -186,8 +186,37 @@ class LifelogTray:
             if self.runner is not None:
                 self.runner.stop()
                 self.runner = None
+
+        # A bandeja é quem sobe o servidor (ver _ensure_server), então é ela
+        # quem tem de derrubá-lo. Sem isto o LifelogServer.exe fica órfão
+        # segurando a porta 8000: "Sair" fecha o ícone e o app continua no ar,
+        # gravando e transcrevendo sem nada visível na tela.
+        self._encerrar_servidor()
+
         if icon is not None:
             icon.stop()
+
+    @staticmethod
+    def _encerrar_servidor() -> None:
+        """Encerra o servidor e a janela da interface, se estiverem no ar."""
+        try:
+            import psutil
+        except ImportError:
+            log.warning("psutil ausente — o servidor pode ficar rodando")
+            return
+
+        alvos = {"lifelogserver.exe", "lifelogui.exe"}
+        for proc in psutil.process_iter(["name", "pid"]):
+            if (proc.info["name"] or "").lower() not in alvos:
+                continue
+            try:
+                proc.terminate()
+                proc.wait(timeout=8)
+                log.info("encerrado: %s", proc.info["name"])
+            except Exception:
+                # Já morreu, ou não temos permissão. Não vale derrubar o
+                # encerramento por causa disso.
+                log.debug("não deu para encerrar %s", proc.info["pid"], exc_info=True)
 
     # ─────────────────────────────── ciclo ───────────────────────────────
 

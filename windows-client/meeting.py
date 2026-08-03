@@ -94,11 +94,13 @@ class MeetingDetector:
         self,
         probe=None,   # WindowTitleProbe: precisa expor titles() -> {processo: título}
         *,
+        server_url: str | None = None,
         apps: tuple[str, ...] = APPS_DE_REUNIAO,
         atraso_fechamento_s: float = 15.0,
         intervalo_s: float = INTERVALO_S,
     ):
         self.probe = probe
+        self.server_url = server_url.rstrip("/") if server_url else None
         self.apps = tuple(a.lower() for a in apps)
         self.atraso_fechamento_s = atraso_fechamento_s
         self.intervalo_s = intervalo_s
@@ -174,6 +176,13 @@ class MeetingDetector:
 
     def _procurar_reuniao(self) -> tuple[bool, str]:
         """Devolve (há reunião, motivo)."""
+        # A extensão de navegador é a fonte mais precisa: ela sabe qual aba
+        # está em chamada, coisa que a leitura de título não distingue quando
+        # há várias janelas abertas.
+        pela_extensao = self._perguntar_ao_servidor()
+        if pela_extensao is not None:
+            return pela_extensao
+
         try:
             com_microfone = _com_microfone_aberto()
         except Exception:
@@ -197,6 +206,37 @@ class MeetingDetector:
                 return True, titulo
 
         return False, "microfone aberto, mas não é reunião"
+
+    def _perguntar_ao_servidor(self) -> tuple[bool, str] | None:
+        """O que a extensão de navegador reportou, ou None se não souber.
+
+        Devolver None (em vez de False) importa: sem extensão instalada, ou
+        com o servidor fora do ar, a decisão volta para os sinais locais em
+        vez de fechar o gate. Servidor caído não pode apagar uma reunião.
+        """
+        if not self.server_url:
+            return None
+
+        try:
+            import httpx
+
+            resposta = httpx.get(f"{self.server_url}/api/meeting/state", timeout=2)
+            if resposta.status_code != 200:
+                return None
+            estado = resposta.json()
+        except Exception:
+            log.debug("servidor não respondeu sobre reunião", exc_info=True)
+            return None
+
+        if not estado.get("ativa"):
+            # A extensão está viva e diz que não há reunião no navegador —
+            # mas um Zoom instalado ainda pode estar rodando, então isso não
+            # é conclusivo. Cai para os sinais locais.
+            return None
+
+        servico = estado.get("servico") or "navegador"
+        titulo = (estado.get("titulo") or "")[:40]
+        return True, f"{servico} (extensão): {titulo}"
 
     def _titulo_de_reuniao(self, navegadores: list[str]) -> str | None:
         """Título de reunião numa janela de navegador, se houver."""

@@ -147,6 +147,45 @@ def test_probe_ausente_nao_quebra(monkeypatch):
     assert d._procurar_reuniao()[0] is False
 
 
+# ─────────────────────── extensão de navegador ───────────────────────
+
+
+def test_extensao_reportando_reuniao_abre_o_gate(monkeypatch):
+    """A extensão sabe qual aba está em chamada — o título não distingue."""
+    d = _detector(monkeypatch, set(), server_url="http://127.0.0.1:8000")
+    monkeypatch.setattr(
+        d, "_perguntar_ao_servidor", lambda: (True, "meet (extensão): Reunião"),
+    )
+
+    encontrada, motivo = d._procurar_reuniao()
+
+    assert encontrada is True
+    assert "extensão" in motivo
+
+
+def test_sem_extensao_cai_para_os_sinais_locais(monkeypatch):
+    """Zoom instalado precisa funcionar mesmo sem extensão nenhuma."""
+    d = _detector(monkeypatch, {"zoom.exe"}, server_url="http://127.0.0.1:8000")
+    monkeypatch.setattr(d, "_perguntar_ao_servidor", lambda: None)
+
+    assert d._procurar_reuniao()[0] is True
+
+
+def test_servidor_fora_do_ar_nao_fecha_o_gate(monkeypatch):
+    """Servidor caído não pode apagar uma reunião em curso."""
+    d = _detector(monkeypatch, {"teams.exe"}, server_url="http://127.0.0.1:9999")
+
+    # Sem servidor de verdade, _perguntar_ao_servidor devolve None e a
+    # decisão volta para o sinal local.
+    assert d._procurar_reuniao()[0] is True
+
+
+def test_sem_url_de_servidor_nem_tenta(monkeypatch):
+    d = _detector(monkeypatch, {"zoom.exe"})
+
+    assert d._perguntar_ao_servidor() is None
+
+
 # ─────────────────────── atraso no fechamento ───────────────────────
 
 

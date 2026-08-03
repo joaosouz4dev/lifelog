@@ -164,7 +164,7 @@ capture:
   # Em caso de falha o gate ABRE, nunca fecha: perder uma reunião inteira por
   # causa de um bug no detector é pior que gravar demais.
   meeting_gate:
-    enabled: false          # mude para true quando quiser só reuniões
+    enabled: true           # só grava durante reuniões
     # false mantém o microfone sempre gravando (sua própria voz).
     gate_mic: true
     # Segundos guardados antes de o gate abrir: o detector leva um instante

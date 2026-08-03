@@ -74,6 +74,7 @@ class CaptureRunner:
         if cfg.get("capture.meeting_gate.enabled", False):
             self.meeting = MeetingDetector(
                 probe.titles,
+                server_url=self.server_url,
                 apps=tuple(cfg.get("capture.meeting_gate.apps", APPS_DE_REUNIAO)),
                 atraso_fechamento_s=float(
                     cfg.get("capture.meeting_gate.atraso_fechamento_s", 15)

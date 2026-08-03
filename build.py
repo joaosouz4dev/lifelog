@@ -157,6 +157,14 @@ def pyinstaller_args(name: str, entry: str, *, windowed: bool) -> list[str]:
     # um módulo novo em server/ passaria despercebido até alguém rodar o .exe.
     args += ["--collect-submodules", "server"]
 
+    # Os módulos do cliente são importados por nome dentro de funções (para
+    # adiar o custo), o que o PyInstaller não enxerga na análise estática.
+    # `text_input` não se chama `typer` de propósito: existe um pacote `typer`
+    # no PyPI, dependência do FastAPI, e o import resolvia para ele — o ditado
+    # transcrevia e o texto sumia sem erro visível.
+    for modulo in ("text_input", "sounds", "hotkey", "dictation", "window_title"):
+        args += ["--hidden-import", modulo]
+
     # Estes carregam submódulos e arquivos de dados por caminho em runtime, o
     # que o PyInstaller não enxerga. Listar hidden-imports um a um já falhou
     # (faltou `requests` e toda transcrição quebrou); --collect-all pega tudo.

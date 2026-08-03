@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from audio_source import AudioSourceProbe  # noqa: E402
 from buffer import SegmentQueue  # noqa: E402
 from capture import CaptureTrack, close_audio, resolve_device  # noqa: E402
+from dictation import DictationController, DictationTap  # noqa: E402
 from uploader import Uploader  # noqa: E402
 from vad import ensure_model  # noqa: E402
 
@@ -66,6 +67,19 @@ class CaptureRunner:
         # COM a cada leitura, e só a trilha de sistema o usa de fato.
         probe = AudioSourceProbe()
 
+        # O ditado desvia o áudio da trilha do microfone em vez de abrir um
+        # dispositivo próprio: um segundo PyAudio() causa segfault no WASAPI.
+        self._config = cfg
+        self.dictation = None
+        self.hotkey = None
+        if cfg.get("dictation.enabled", True):
+            self.dictation = DictationController(
+                self.server_url, DictationTap(
+                    max_segundos=float(cfg.get("dictation.max_seconds", 120))
+                ),
+                bitrate=bitrate,
+            )
+
         for source in sources or ["mic", "system"]:
             device = resolve_device(source)
             if device is None:
@@ -76,6 +90,11 @@ class CaptureRunner:
                 CaptureTrack(
                     source, index, channels, rate, self.queue, vad_params, model_path,
                     paused=self._paused, bitrate=bitrate, probe=probe,
+                    # Só o microfone: ditado é a voz de quem fala, e o
+                    # loopback misturaria o som do sistema na frase.
+                    tap=self.dictation.tap if (
+                        self.dictation is not None and source == "mic"
+                    ) else None,
                 )
             )
 
@@ -98,11 +117,36 @@ class CaptureRunner:
         for track in self.tracks:
             track.start()
         self.uploader.start()
+        self._iniciar_ditado()
         self._started = True
         log.info(
             "capturando %s | dispositivo=%s | servidor=%s",
             " + ".join(t.source for t in self.tracks), self.device_id, self.server_url,
         )
+
+    def _iniciar_ditado(self) -> None:
+        """Arma o atalho. Falhar aqui não pode derrubar a captura.
+
+        A combinação pode já estar tomada por outro programa — situação
+        comum. O ditado é acessório; gravar é a função principal.
+        """
+        if self.dictation is None:
+            return
+        try:
+            from hotkey import HotkeyListener
+
+            self.hotkey = HotkeyListener(
+                self._config.get("dictation.hotkey", "ctrl+shift+space"),
+                self.dictation.on_press,
+                self.dictation.on_release,
+                on_cancel=self.dictation.cancelar,
+            )
+            self.hotkey.start()
+            if not self.hotkey.aguardar_registro():
+                log.warning("ditado indisponível: %s", self.hotkey.erro)
+        except Exception:
+            log.exception("falha ao armar o ditado; a captura segue normal")
+            self.hotkey = None
 
     def pause(self) -> None:
         """Para de gravar. O uploader segue drenando o que já está na fila."""
@@ -120,6 +164,8 @@ class CaptureRunner:
         return self.is_paused
 
     def stop(self, timeout: float = 10.0) -> None:
+        if self.hotkey is not None:
+            self.hotkey.stop()
         for track in self.tracks:
             track.stop()
         self.uploader.stop()
@@ -142,4 +188,15 @@ class CaptureRunner:
             "pending": stats["pending"],
             "queued_seconds": stats["queued_seconds"],
             "stuck": stats["stuck"],
+            "dictation": self._status_ditado(),
+        }
+
+    def _status_ditado(self) -> dict | None:
+        if self.dictation is None:
+            return None
+        return {
+            "hotkey": self._config.get("dictation.hotkey", "ctrl+shift+space"),
+            "armado": bool(self.hotkey is not None and self.hotkey.registrado),
+            "erro": self.hotkey.erro if self.hotkey is not None else None,
+            "gravando": self.dictation.gravando,
         }

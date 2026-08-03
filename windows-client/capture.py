@@ -127,6 +127,7 @@ class CaptureTrack(threading.Thread):
         paused: threading.Event,
         bitrate: int = 24000,
         probe=None,
+        tap=None,
     ):
         super().__init__(name=f"capture-{source}", daemon=True)
         self.source = source
@@ -140,6 +141,10 @@ class CaptureTrack(threading.Thread):
         # Descobre qual app está tocando, para o relatório poder separar
         # reunião de série depois. None desliga a marcação.
         self.probe = probe
+        # Desvia o áudio para o ditado quando ele está gravando. Só a trilha
+        # do microfone recebe um: ditado é a voz de quem fala, e alimentar
+        # com o loopback misturaria o som do sistema na frase.
+        self.tap = tap
         # `_stopping`, não `_stop`: threading.Thread já tem um método _stop()
         # interno, e sobrescrevê-lo com um Event faz join() estourar TypeError.
         self._stopping = threading.Event()
@@ -172,21 +177,10 @@ class CaptureTrack(threading.Thread):
             was_paused = False
 
             while not self._stopping.is_set():
-                if self.paused.is_set():
-                    if not was_paused:
-                        log.info("[%s] pausado", self.source)
-                        self._flush()
-                        was_paused = True
-                    # Continua lendo para não estourar o buffer do driver,
-                    # mas descarta tudo — nada é gravado enquanto pausado.
-                    stream.read(int(self.source_rate * 0.1), exception_on_overflow=False)
-                    continue
-
-                if was_paused:
-                    log.info("[%s] retomado", self.source)
-                    was_paused = False
-                    stream_start = datetime.now()
-
+                # A leitura é única e vem antes de tudo: o driver precisa ser
+                # drenado mesmo pausado, senão o buffer estoura. O que muda
+                # entre pausado e ativo é o que se faz com o áudio, não se
+                # ele é lido.
                 try:
                     raw = stream.read(
                         int(self.source_rate * 0.1), exception_on_overflow=False
@@ -201,6 +195,28 @@ class CaptureTrack(threading.Thread):
                 )
                 if chunk.size == 0:
                     continue
+
+                # O ditado vem antes da pausa de propósito: pausar o lifelog
+                # não deveria desligar o ditado — é justamente quando mais se
+                # quer ditar sem registrar.
+                if self.tap is not None and self.tap.ativo:
+                    self.tap.alimentar(chunk)
+                    # E o chunk para aqui: deixá-lo seguir faria o VAD capturar
+                    # a mesma fala, transcrevê-la uma segunda vez e colocá-la
+                    # na timeline — um ditado é comando, não registro de vida.
+                    continue
+
+                if self.paused.is_set():
+                    if not was_paused:
+                        log.info("[%s] pausado", self.source)
+                        self._flush()
+                        was_paused = True
+                    continue
+
+                if was_paused:
+                    log.info("[%s] retomado", self.source)
+                    was_paused = False
+                    stream_start = datetime.now()
 
                 for segment in self.vad.process(chunk):
                     self._emit(segment, stream_start)

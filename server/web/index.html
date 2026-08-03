@@ -14,6 +14,7 @@
       <button class="tab is-active" data-view="timeline" role="tab">Timeline</button>
       <button class="tab" data-view="reports" role="tab">Relatórios</button>
       <button class="tab" data-view="chat" role="tab">Chat</button>
+      <button class="tab" data-view="config" role="tab">Configurações</button>
     </div>
     <input type="date" id="day-picker" aria-label="Escolher dia">
     <input type="search" id="search-box" placeholder="Buscar na transcrição…" aria-label="Buscar">
@@ -60,6 +61,51 @@
       <article id="report-body" class="report-body">
         <p class="empty">Escolha um relatório à esquerda.</p>
       </article>
+    </div>
+  </div>
+
+  <!-- Configurações -->
+  <div id="view-config" hidden>
+    <p class="config-intro">
+      Escolha o que é transcrito. Marque um programa para transcrever o áudio
+      que sai dele; o que ficar desmarcado é gravado mas não transcrito.
+      <strong>Seu microfone passa sempre</strong> — sua própria voz nunca é filtrada.
+    </p>
+
+    <section class="config-block">
+      <h2>Detectados nos últimos 7 dias</h2>
+      <div id="config-apps" class="config-apps">
+        <p class="empty">Carregando…</p>
+      </div>
+    </section>
+
+    <section class="config-block">
+      <h2>Termos permitidos</h2>
+      <p class="config-hint">
+        Casa por pedaço de texto, no nome do programa ou no título da janela —
+        é o título que revela o site aberto, já que no navegador tudo é
+        "chrome.exe". Deixe vazio para transcrever tudo, menos entretenimento.
+      </p>
+      <div id="config-allow" class="chip-list"></div>
+      <form id="allow-form" class="chip-form">
+        <input type="text" id="allow-input" placeholder="ex.: meet, zoom, teams">
+        <button type="submit">Adicionar</button>
+      </form>
+    </section>
+
+    <section class="config-block">
+      <h2>Nunca transcrever</h2>
+      <p class="config-hint">Vence a lista acima, sempre.</p>
+      <div id="config-block-list" class="chip-list"></div>
+      <form id="block-form" class="chip-form">
+        <input type="text" id="block-input" placeholder="ex.: 1password">
+        <button type="submit">Adicionar</button>
+      </form>
+    </section>
+
+    <div class="config-actions">
+      <button id="config-save" type="button">Salvar</button>
+      <span id="config-feedback" class="feedback" aria-live="polite"></span>
     </div>
   </div>
 </main>

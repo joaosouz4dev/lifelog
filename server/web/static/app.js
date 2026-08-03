@@ -40,9 +40,18 @@ function humanDuration(ms) {
   return `${Math.floor(minutes / 60)}h ${pad(minutes % 60)}min`;
 }
 
-async function fetchJSON(url) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`${response.status} em ${url}`);
+async function fetchJSON(url, options) {
+  const response = await fetch(url, options);
+  if (!response.ok) {
+    // O `detail` do FastAPI diz o que houve; sem ele o usuário só vê um
+    // número e não sabe se errou algo ou se o servidor caiu.
+    let detalhe = '';
+    try {
+      const corpo = await response.json();
+      detalhe = typeof corpo.detail === 'string' ? corpo.detail : '';
+    } catch { /* resposta sem JSON */ }
+    throw new Error(detalhe || `${response.status} em ${url}`);
+  }
   return response.json();
 }
 
@@ -491,6 +500,7 @@ function switchView(view) {
   $('#view-timeline').hidden = view !== 'timeline';
   $('#view-reports').hidden = view !== 'reports';
   $('#view-chat').hidden = view !== 'chat';
+  $('#view-config').hidden = view !== 'config';
 
   // Data e busca só fazem sentido na timeline.
   dayPicker.hidden = view !== 'timeline';
@@ -503,8 +513,121 @@ function switchView(view) {
   } else if (view === 'chat') {
     clearTimeout(refreshTimer);
     chatInput.focus();
+  } else if (view === 'config') {
+    clearTimeout(refreshTimer);
+    loadConfig();
   } else {
     loadDay(dayPicker.value);
+  }
+}
+
+// ───────────────────────────── configurações ─────────────────────────────
+
+// Estado local: só vai para o servidor quando o usuário clica em Salvar, para
+// que ele possa marcar várias coisas antes de confirmar.
+let configAtual = { allowlist: [], blocklist: [] };
+
+async function loadConfig() {
+  const alvo = $('#config-apps');
+  try {
+    const [config, apps] = await Promise.all([
+      fetchJSON('/api/config/capture'),
+      fetchJSON('/api/config/apps-detectados'),
+    ]);
+    configAtual = { allowlist: [...config.allowlist], blocklist: [...config.blocklist] };
+    renderChips();
+    renderApps(apps);
+  } catch (err) {
+    alvo.innerHTML = `<p class="feedback error">${escapeHTML(err.message)}</p>`;
+  }
+}
+
+function renderApps(apps) {
+  const alvo = $('#config-apps');
+  if (!apps.length) {
+    alvo.innerHTML = '<p class="empty">Nada capturado ainda.</p>';
+    return;
+  }
+
+  alvo.innerHTML = apps.map((app) => {
+    const nome = app.programa.replace(/\.exe$/i, '');
+    // O microfone não é filtrável: mostrar um controle desligado ali daria a
+    // impressão errada de que a própria voz pode ser excluída por engano.
+    const fixo = app.source === 'mic';
+    const marcado = configAtual.allowlist.some((t) => casa(t, app));
+
+    const titulos = app.titulos.length
+      ? `<div class="app-titulos">${app.titulos.map((t) =>
+          `<button type="button" class="tag titulo-sugerido" data-termo="${escapeHTML(t.titulo)}"
+            title="Adicionar &quot;${escapeHTML(t.titulo)}&quot; aos permitidos"
+            >${escapeHTML(t.titulo.slice(0, 46))}</button>`).join('')}</div>`
+      : '';
+
+    return `
+      <div class="app-item${app.permitido ? '' : ' is-excluded'}">
+        <label class="app-head">
+          <input type="checkbox" data-programa="${escapeHTML(app.programa)}"
+                 ${marcado ? 'checked' : ''} ${fixo ? 'disabled checked' : ''}>
+          <span class="app-nome">${escapeHTML(nome)}</span>
+          <span class="app-meta">${app.segmentos} segmento(s)${
+            app.ignorados ? ` · ${app.ignorados} ignorado(s)` : ''
+          }</span>
+          <span class="tag ${app.permitido ? 'ok' : 'excluded'}">${
+            fixo ? 'sempre transcrito' : (app.permitido ? 'transcrevendo' : 'ignorado')
+          }</span>
+        </label>
+        ${titulos}
+      </div>`;
+  }).join('');
+}
+
+// O termo casa contra o programa e contra os títulos, igual ao servidor.
+function casa(termo, app) {
+  const t = termo.toLowerCase();
+  if (app.programa.includes(t)) return true;
+  return app.titulos.some((x) => x.titulo.toLowerCase().includes(t));
+}
+
+function renderChips() {
+  for (const [alvo, lista] of [
+    ['#config-allow', configAtual.allowlist],
+    ['#config-block-list', configAtual.blocklist],
+  ]) {
+    $(alvo).innerHTML = lista.length
+      ? lista.map((termo) =>
+          `<span class="chip">${escapeHTML(termo)}
+            <button type="button" class="chip-x" data-termo="${escapeHTML(termo)}"
+                    data-lista="${alvo === '#config-allow' ? 'allow' : 'block'}"
+                    aria-label="Remover ${escapeHTML(termo)}">×</button></span>`
+        ).join('')
+      : '<span class="empty-inline">nenhum termo</span>';
+  }
+}
+
+async function saveConfig() {
+  const botao = $('#config-save');
+  const feedback = $('#config-feedback');
+  botao.disabled = true;
+  feedback.className = 'feedback';
+  feedback.textContent = 'salvando…';
+
+  try {
+    const salvo = await fetchJSON('/api/config/capture', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(configAtual),
+    });
+    // Reexibe o que o servidor aceitou: ele descarta vazios e duplicados.
+    configAtual = { allowlist: [...salvo.allowlist], blocklist: [...salvo.blocklist] };
+    renderChips();
+    renderApps(await fetchJSON('/api/config/apps-detectados'));
+    feedback.className = 'feedback success';
+    feedback.textContent = 'salvo — vale a partir do próximo áudio capturado';
+  } catch (err) {
+    feedback.className = 'feedback error';
+    feedback.textContent = err.message;
+  } finally {
+    botao.disabled = false;
   }
 }
 
@@ -576,6 +699,65 @@ for (const tab of document.querySelectorAll('.tab')) {
 
 $('#gen-daily').addEventListener('click', (e) => generateReport('daily', e.target));
 $('#gen-monthly').addEventListener('click', (e) => generateReport('monthly', e.target));
+
+// ── configurações ──
+// Delegação: a lista é reconstruída a cada render, e religar os eventos em
+// cada item deixaria ouvintes órfãos para trás.
+$('#config-apps').addEventListener('click', (e) => {
+  const sugestao = e.target.closest('.titulo-sugerido');
+  if (sugestao) {
+    adicionarTermo('allowlist', sugestao.dataset.termo);
+    return;
+  }
+});
+
+$('#config-apps').addEventListener('change', (e) => {
+  const caixa = e.target.closest('input[type="checkbox"]');
+  if (!caixa || caixa.disabled) return;
+
+  const programa = caixa.dataset.programa.replace(/\.exe$/i, '');
+  if (caixa.checked) {
+    adicionarTermo('allowlist', programa);
+  } else {
+    // Tira tudo que estava fazendo este app passar — inclusive um título.
+    configAtual.allowlist = configAtual.allowlist.filter(
+      (t) => !caixa.dataset.programa.includes(t.toLowerCase())
+    );
+    renderChips();
+  }
+});
+
+for (const alvo of ['#config-allow', '#config-block-list']) {
+  $(alvo).addEventListener('click', (e) => {
+    const botao = e.target.closest('.chip-x');
+    if (!botao) return;
+    const lista = botao.dataset.lista === 'allow' ? 'allowlist' : 'blocklist';
+    configAtual[lista] = configAtual[lista].filter((t) => t !== botao.dataset.termo);
+    renderChips();
+  });
+}
+
+$('#allow-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  adicionarTermo('allowlist', $('#allow-input').value);
+  $('#allow-input').value = '';
+});
+
+$('#block-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  adicionarTermo('blocklist', $('#block-input').value);
+  $('#block-input').value = '';
+});
+
+$('#config-save').addEventListener('click', saveConfig);
+
+function adicionarTermo(lista, bruto) {
+  const termo = (bruto || '').trim().toLowerCase();
+  // Um termo vazio casaria com qualquer coisa e viraria "permite tudo".
+  if (!termo || configAtual[lista].includes(termo)) return;
+  configAtual[lista].push(termo);
+  renderChips();
+}
 
 chatForm.addEventListener('submit', (e) => {
   e.preventDefault();

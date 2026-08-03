@@ -143,3 +143,52 @@ def get_config() -> Config:
     if _cached is None:
         _cached = load_config()
     return _cached
+
+
+def reset_cache() -> None:
+    """Força a próxima leitura a reler o disco."""
+    global _cached
+    _cached = None
+
+
+def local_override_path() -> Path:
+    """Onde gravar os ajustes feitos pela interface.
+
+    O mesmo arquivo que `load_config` lê por último (e que portanto vence os
+    demais). No app empacotado vai para %LOCALAPPDATA%\\Lifelog: ao lado do
+    .exe seria Program Files, somente leitura, e dentro do bundle seria uma
+    pasta temporária destruída ao sair.
+    """
+    return (USER_DATA if IS_FROZEN else ROOT) / "config.local.yaml"
+
+
+def save_local_override(patch: dict) -> Path:
+    """Aplica um patch ao config.local.yaml e invalida o cache.
+
+    Recebe um patch, nunca a config inteira: `_resolve_env` já trocou os
+    `${VAR}` pelos valores reais na leitura, então gravar `cfg.data` de volta
+    escreveria as chaves de API em texto puro no disco.
+
+    A invalidação do cache é parte inseparável da gravação — sem ela a
+    mudança só valeria no próximo boot do servidor, e quem marcasse uma opção
+    na tela continuaria vendo o comportamento antigo.
+    """
+    destino = local_override_path()
+    destino.parent.mkdir(parents=True, exist_ok=True)
+
+    atual: dict = {}
+    if destino.exists():
+        with open(destino, encoding="utf-8") as fh:
+            atual = yaml.safe_load(fh) or {}
+
+    resultado = _deep_merge(atual, patch)
+
+    # Grava num temporário e renomeia: este arquivo é lido em todo start, e
+    # um YAML truncado no meio da escrita deixaria o servidor sem subir.
+    temporario = destino.with_suffix(".yaml.tmp")
+    with open(temporario, "w", encoding="utf-8") as fh:
+        yaml.safe_dump(resultado, fh, allow_unicode=True, sort_keys=False)
+    os.replace(temporario, destino)
+
+    reset_cache()
+    return destino

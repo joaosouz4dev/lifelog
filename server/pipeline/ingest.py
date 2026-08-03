@@ -187,7 +187,10 @@ def ingest_segment(data_dir: Path, meta: IngestMeta, audio_bytes: bytes) -> Inge
         "segmento %s recebido (%s, %.1fs) -> id=%s",
         meta.client_uid, meta.source.value, meta.duration_ms / 1000, segment_id,
     )
-    return IngestResponse(segment_id=segment_id, status=SegmentStatus.PENDING)
+    # O status real, não um PENDING fixo: um segmento fora da lista de
+    # permitidos nasce 'skipped', e o cliente precisa saber disso para não
+    # ficar esperando uma transcrição que nunca vem.
+    return IngestResponse(segment_id=segment_id, status=SegmentStatus(status_inicial))
 
 
 def purge_old_audio(data_dir: Path, retention_days: int) -> int:

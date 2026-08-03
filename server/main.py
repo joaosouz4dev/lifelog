@@ -14,10 +14,11 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import chat, db, reports, version
+from . import chat, db, meeting_state, reports, version
 from .classify import TITLE_SEP, classify_app, should_transcribe
 from .config import get_config, save_local_override
 from .hub.base import BudgetExceeded, ProviderError
@@ -30,6 +31,8 @@ from .models import (
     HubStatus,
     IngestMeta,
     IngestResponse,
+    MeetingReport,
+    MeetingState,
     Segment,
     Source,
 )
@@ -82,6 +85,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Lifelog", version="0.1.0", lifespan=lifespan)
+
+# A extensão de navegador roda numa origem `chrome-extension://…` e o
+# navegador bloquearia a chamada sem isto. Só o endpoint de reunião precisa,
+# e ele não lê nem devolve gravação nenhuma — apenas "há reunião agora?".
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"^(chrome|moz)-extension://.*$",
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
 
 
 # ─────────────────────────────── ingestão ───────────────────────────────
@@ -374,6 +387,25 @@ def put_capture_config(novo: CaptureConfig) -> CaptureConfig:
         {"capture": {"allowlist": novo.allowlist, "blocklist": novo.blocklist}}
     )
     return _capture_config()
+
+
+@app.post("/api/meeting/state", response_model=MeetingState)
+def report_meeting_state(relato: MeetingReport) -> MeetingState:
+    """A extensão de navegador reporta se há uma reunião em curso.
+
+    Estado efêmero, não configuração: fica em memória e expira sozinho. A
+    extensão morre junto com o navegador sem mandar o "acabou", e sem TTL o
+    gate ficaria aberto para sempre.
+    """
+    return MeetingState(**meeting_state.reportar(
+        ativa=relato.ativa, servico=relato.servico, titulo=relato.titulo
+    ))
+
+
+@app.get("/api/meeting/state", response_model=MeetingState)
+def get_meeting_state() -> MeetingState:
+    """Consultado pelo cliente Windows para decidir se grava."""
+    return MeetingState(**meeting_state.atual())
 
 
 @app.get("/api/config/apps-detectados")

@@ -155,6 +155,24 @@ def _limpar_termos(termos: list[str]) -> list[str]:
     return vistos[:MAX_TERMOS]
 
 
+class MeetingReport(BaseModel):
+    """O que a extensão de navegador reporta."""
+
+    ativa: bool
+    servico: str | None = None   # "meet", "teams", "zoom"…
+    titulo: str | None = None    # só o título da aba, nunca o conteúdo
+
+
+class MeetingState(BaseModel):
+    """Estado em vigor, já considerando a expiração."""
+
+    ativa: bool
+    servico: str | None = None
+    titulo: str | None = None
+    # Quanto falta para o relato expirar. Zero significa "não há reunião".
+    expira_em_s: float = 0
+
+
 class Dictation(BaseModel):
     """Resposta do ditado: o texto sai na mesma requisição.
 

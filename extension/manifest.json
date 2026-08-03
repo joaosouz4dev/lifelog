@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Lifelog — detector de reunião",
+  "version": "1.0.0",
+  "description": "Avisa o Lifelog quando você entra numa reunião no Meet, Teams ou Zoom, para que ele grave só nesse período.",
+
+  "permissions": ["tabs", "alarms"],
+
+  "host_permissions": ["http://127.0.0.1:8000/*"],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "icons": {
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}

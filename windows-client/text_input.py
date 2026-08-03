@@ -48,8 +48,31 @@ class _KEYBDINPUT(ctypes.Structure):
     ]
 
 
+class _MOUSEINPUT(ctypes.Structure):
+    """Não é usado aqui, mas precisa existir.
+
+    `SendInput` valida o tamanho da struct que recebe, e quem define esse
+    tamanho é o maior membro da união — o MOUSEINPUT, com 32 bytes contra 24
+    do teclado. Sem ele a struct sai com 32 bytes em vez de 40, e a chamada
+    falha com ERROR_INVALID_PARAMETER (87) sem digitar nada.
+    """
+
+    _fields_ = [
+        ("dx", wt.LONG),
+        ("dy", wt.LONG),
+        ("mouseData", wt.DWORD),
+        ("dwFlags", wt.DWORD),
+        ("time", wt.DWORD),
+        ("dwExtraInfo", ctypes.POINTER(wt.ULONG)),
+    ]
+
+
+class _HARDWAREINPUT(ctypes.Structure):
+    _fields_ = [("uMsg", wt.DWORD), ("wParamL", wt.WORD), ("wParamH", wt.WORD)]
+
+
 class _INPUTUNION(ctypes.Union):
-    _fields_ = [("ki", _KEYBDINPUT)]
+    _fields_ = [("mi", _MOUSEINPUT), ("ki", _KEYBDINPUT), ("hi", _HARDWAREINPUT)]
 
 
 class _INPUT(ctypes.Structure):
@@ -63,11 +86,27 @@ def _evento(vk: int, scan: int, flags: int) -> _INPUT:
     )
 
 
-def _enviar(eventos: list[_INPUT]) -> None:
+def _enviar(eventos: list[_INPUT]) -> bool:
+    """Envia os eventos. False se o Windows recusou.
+
+    Conferir o retorno é obrigatório: `SendInput` devolve quantos eventos
+    aceitou, e uma struct malformada faz ele devolver 0 sem lançar nada. Foi
+    assim que uma união sem o MOUSEINPUT quebrou toda a digitação em silêncio
+    — o ditado transcrevia e o texto sumia.
+    """
     if not eventos:
-        return
+        return True
     array = (_INPUT * len(eventos))(*eventos)
-    _user32.SendInput(len(eventos), array, ctypes.sizeof(_INPUT))
+    aceitos = _user32.SendInput(len(eventos), array, ctypes.sizeof(_INPUT))
+    if aceitos != len(eventos):
+        erro = ctypes.windll.kernel32.GetLastError()
+        log.warning(
+            "o Windows aceitou %s de %s eventos (erro %s)%s",
+            aceitos, len(eventos), erro,
+            " — janela com privilégio maior?" if erro == 5 else "",
+        )
+        return False
+    return True
 
 
 def digitar(texto: str) -> bool:
@@ -86,8 +125,12 @@ def digitar(texto: str) -> bool:
             eventos.append(_evento(0, code, KEYEVENTF_UNICODE))
             eventos.append(_evento(0, code, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP))
 
-        _enviar(eventos)
-        return True
+        if _enviar(eventos):
+            return True
+        # O alvo recusou a digitação (janela elevada, por exemplo). O
+        # clipboard costuma passar onde o SendInput não passa.
+        log.info("digitação recusada; tentando pelo clipboard")
+        return colar(texto)
     except Exception:
         log.exception("falha ao digitar; tentando pelo clipboard")
         return colar(texto)

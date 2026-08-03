@@ -114,6 +114,18 @@ class LifelogTray:
             return "Pausar captura"
         return "Retomar captura" if self.runner.is_paused else "Pausar captura"
 
+    def _dictation_line(self, _item=None) -> str:
+        """Sem isto não há como saber se o atalho pegou ou está tomado."""
+        if self.runner is None:
+            return "Ditado: iniciando…"
+        estado = self.runner.status().get("dictation")
+        if estado is None:
+            return "Ditado: desativado"
+        if not estado["armado"]:
+            return f"Ditado indisponível: {estado['erro'] or 'falhou'}"
+        atalho = estado["hotkey"].replace("+", " + ")
+        return f"Ditado: segure {atalho}"
+
     def _refresh(self) -> None:
         if self._icon is None or self.runner is None:
             return
@@ -287,6 +299,7 @@ class LifelogTray:
         menu = pystray.Menu(
             pystray.MenuItem(self._status_line, None, enabled=False),
             pystray.MenuItem(self._sources_line, None, enabled=False),
+            pystray.MenuItem(self._dictation_line, None, enabled=False),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(self._pause_label, self._toggle_pause, default=True),
             pystray.MenuItem("Abrir interface", self._open_ui),

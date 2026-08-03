@@ -74,6 +74,9 @@ HIDDEN_IMPORTS = [
     "win32event",
     "win32api",
     "winerror",
+    # Fallback do ditado para textos longos: cola via clipboard em vez de
+    # digitar caractere a caractere.
+    "win32clipboard",
     # A janela nativa: o pywebview escolhe o backend por string em runtime, e
     # no Windows o backend é o WebView2 via clr/pythonnet.
     "webview",

@@ -101,6 +101,53 @@ def test_estado_informa_quanto_falta_para_expirar(api):
     assert 0 < corpo["expira_em_s"] <= meeting_state.TTL_SEGUNDOS
 
 
+# ──────────────────────────── modo manual ────────────────────────────
+
+
+def test_o_padrao_e_automatico(api):
+    assert api.get("/api/meeting/state").json()["modo"] == "auto"
+
+
+def test_modo_sempre_grava_sem_reuniao(api):
+    """O botão "gravar agora" precisa funcionar sem reunião nenhuma."""
+    corpo = api.put("/api/meeting/mode", json={"modo": "sempre"}).json()
+
+    assert corpo["ativa"] is True
+    assert corpo["modo"] == "sempre"
+
+
+def test_modo_nunca_nao_grava_nem_em_reuniao(api):
+    """Escolha explícita vence a detecção: às vezes a reunião é privada."""
+    api.post("/api/meeting/state", json={"ativa": True, "servico": "meet"})
+
+    corpo = api.put("/api/meeting/mode", json={"modo": "nunca"}).json()
+
+    assert corpo["ativa"] is False
+
+
+def test_voltar_ao_automatico_restaura_a_deteccao(api):
+    api.post("/api/meeting/state", json={"ativa": True, "servico": "meet"})
+    api.put("/api/meeting/mode", json={"modo": "nunca"})
+    assert api.get("/api/meeting/state").json()["ativa"] is False
+
+    api.put("/api/meeting/mode", json={"modo": "auto"})
+
+    assert api.get("/api/meeting/state").json()["ativa"] is True
+
+
+def test_modo_invalido_e_recusado(api):
+    assert api.put("/api/meeting/mode", json={"modo": "talvez"}).status_code == 422
+
+
+def test_o_modo_volta_ao_automatico_ao_reiniciar():
+    """Vive em memória de propósito: ninguém quer descobrir semanas depois
+    que deixou em "nunca" e perdeu tudo."""
+    meeting_state.definir_modo("nunca")
+    meeting_state.limpar()   # equivale a reiniciar o servidor
+
+    assert meeting_state.modo_atual() == "auto"
+
+
 # ──────────────────────────── CORS ────────────────────────────
 
 

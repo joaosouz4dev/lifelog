@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+
+<!-- O estado ocupa o topo inteiro: é a única coisa que a pessoa abre o
+     popup para saber. O resto é contexto. -->
+<header id="cabecalho">
+  <div class="marca">
+    <img src="icon48.png" alt="" width="16" height="16">
+    <span>Lifelog</span>
+    <span id="versao"></span>
+  </div>
+
+  <div class="estado">
+    <span class="ponto" id="ponto"></span>
+    <h1 id="estado-titulo">Verificando…</h1>
+  </div>
+  <p class="motivo" id="estado-motivo"></p>
+</header>
+
+<main>
+  <!-- Três botões numa linha, texto curto: o rótulo longo virava duas
+       linhas ilegíveis num botão de 97px. -->
+  <div class="modos" role="group" aria-label="Modo de captura">
+    <button class="modo" data-modo="auto" title="Grava quando detectar uma reunião">Auto</button>
+    <button class="modo" data-modo="sempre" title="Grava agora, ignorando a detecção">Gravar</button>
+    <button class="modo" data-modo="nunca" title="Não grava nada, nem em reunião">Pausar</button>
+  </div>
+
+  <div class="numeros">
+    <span><b id="n-segmentos">–</b> segmentos</span>
+    <span><b id="n-fala">–</b> de fala</span>
+    <span id="fila-bloco" hidden><b id="n-fila">–</b> na fila</span>
+  </div>
+
+  <ul id="lista-recentes" class="recentes"></ul>
+</main>
+
+<footer>
+  <button id="abrir">Ver tudo</button>
+  <span id="erro" class="erro" hidden></span>
+</footer>
+
+<script src="popup.js"></script>
+</body>
+</html>

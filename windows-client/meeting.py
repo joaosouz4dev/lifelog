@@ -233,6 +233,14 @@ class MeetingDetector:
             log.debug("servidor não respondeu sobre reunião", exc_info=True)
             return None
 
+        modo = estado.get("modo", "auto")
+        if modo == "nunca":
+            # Escolha explícita da pessoa: não grava nada, nem em reunião.
+            # É a única situação em que fechamos o gate sem hesitar.
+            return False, "desligado manualmente"
+        if modo == "sempre":
+            return True, "gravação forçada manualmente"
+
         if not estado.get("ativa"):
             # A extensão está viva e diz que não há reunião no navegador —
             # mas um Zoom instalado ainda pode estar rodando, então isso não

@@ -24,6 +24,32 @@ _lock = threading.Lock()
 _estado: dict | None = None
 _expira_em = 0.0
 
+# Sobreposição manual, escolhida no popup da extensão ou na interface:
+#   "auto"   — decide pela detecção de reunião (o padrão)
+#   "sempre" — grava independente de reunião
+#   "nunca"  — não grava nada, nem em reunião
+#
+# Vive em memória junto com o resto: é uma decisão do momento ("agora quero
+# gravar isto"), não configuração permanente. Reiniciar volta ao automático,
+# que é o comportamento seguro — ninguém quer descobrir semanas depois que
+# deixou em "nunca" e perdeu tudo.
+_modo = "auto"
+
+
+def definir_modo(modo: str) -> str:
+    """Troca o modo de captura. Devolve o que ficou valendo."""
+    global _modo
+    if modo not in ("auto", "sempre", "nunca"):
+        raise ValueError(f"modo inválido: {modo}")
+    with _lock:
+        _modo = modo
+    return _modo
+
+
+def modo_atual() -> str:
+    with _lock:
+        return _modo
+
 
 def reportar(*, ativa: bool, servico: str | None = None, titulo: str | None = None) -> dict:
     """Registra o que a extensão viu. Devolve o estado resultante."""
@@ -46,19 +72,29 @@ def reportar(*, ativa: bool, servico: str | None = None, titulo: str | None = No
 
 
 def atual() -> dict:
-    """Estado agora, já considerando a expiração."""
+    """Estado agora, já considerando a expiração e o modo manual."""
     with _lock:
-        if _estado is None or time.monotonic() > _expira_em:
-            return {"ativa": False, "servico": None, "titulo": None, "expira_em_s": 0}
-        return {
-            **_estado,
-            "expira_em_s": round(_expira_em - time.monotonic(), 1),
-        }
+        modo = _modo
+        expirou = _estado is None or time.monotonic() > _expira_em
+        base = (
+            {"ativa": False, "servico": None, "titulo": None, "expira_em_s": 0}
+            if expirou
+            else {**_estado, "expira_em_s": round(_expira_em - time.monotonic(), 1)}
+        )
+
+    # O manual vence a detecção: quem apertou o botão sabe o que quer.
+    if modo == "sempre":
+        return {**base, "ativa": True, "servico": base.get("servico") or "manual",
+                "modo": modo}
+    if modo == "nunca":
+        return {**base, "ativa": False, "modo": modo}
+    return {**base, "modo": modo}
 
 
 def limpar() -> None:
     """Zera o estado. Existe para os testes não vazarem entre si."""
-    global _estado, _expira_em
+    global _estado, _expira_em, _modo
     with _lock:
         _estado = None
         _expira_em = 0.0
+        _modo = "auto"

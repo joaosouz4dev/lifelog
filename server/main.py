@@ -15,12 +15,20 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import chat, db, reports, version
-from .classify import classify_app
-from .config import get_config
+from .classify import TITLE_SEP, classify_app, should_transcribe
+from .config import get_config, save_local_override
 from .hub.base import BudgetExceeded, ProviderError
 from .hub.llm import build_llm_chain
 from .hub.stt import build_stt_chain
-from .models import DayStats, HubStatus, IngestMeta, IngestResponse, Segment, Source
+from .models import (
+    CaptureConfig,
+    DayStats,
+    HubStatus,
+    IngestMeta,
+    IngestResponse,
+    Segment,
+    Source,
+)
 from .pipeline import ingest as ingest_pipeline
 from .pipeline.transcribe import TranscriptionWorker, retry_failed
 
@@ -247,6 +255,111 @@ def list_days(limit: int = Query(60, le=365)) -> list[dict]:
         (limit,),
     ).fetchall()
     return [{"day": r["day"], "segments": r["n"]} for r in rows]
+
+
+# ────────────────────────────── configuração ──────────────────────────────
+
+
+def _capture_config() -> CaptureConfig:
+    """Listas em vigor agora.
+
+    Lê com `get_config()` a cada chamada de propósito: o `cfg` do topo do
+    módulo é o snapshot do boot e não enxergaria o que a tela acabou de
+    gravar.
+    """
+    atual = get_config()
+    return CaptureConfig(
+        allowlist=atual.get("capture.allowlist", []) or [],
+        blocklist=atual.get("capture.blocklist", []) or [],
+    )
+
+
+@app.get("/api/config/capture", response_model=CaptureConfig)
+def get_capture_config() -> CaptureConfig:
+    return _capture_config()
+
+
+@app.put("/api/config/capture", response_model=CaptureConfig)
+def put_capture_config(novo: CaptureConfig) -> CaptureConfig:
+    """Grava as listas e devolve o que de fato ficou valendo.
+
+    Devolver o resultado importa: o modelo descarta termos vazios e
+    duplicados, então a tela precisa reexibir a lista real, não a enviada.
+    """
+    save_local_override(
+        {"capture": {"allowlist": novo.allowlist, "blocklist": novo.blocklist}}
+    )
+    return _capture_config()
+
+
+@app.get("/api/config/apps-detectados")
+def apps_detectados(dias: int = Query(7, ge=1, le=90), limit: int = Query(40, le=200)) -> list[dict]:
+    """Origens de áudio vistas nos últimos dias, agrupadas por programa.
+
+    Agrupar importa: `app_name` guarda o título da janela junto
+    ("chrome.exe｜Reunião — Google Meet"), então um valor distinto por aba
+    devolveria centenas de linhas quase iguais. O programa vira o grupo e os
+    títulos mais frequentes viram sugestões de termo.
+    """
+    inicio = (datetime.now() - timedelta(days=dias)).strftime("%Y-%m-%dT00:00:00")
+    rows = db.get_connection().execute(
+        """
+        SELECT COALESCE(s.app_name, ss.app_name) AS app_name,
+               ss.source AS source,
+               COUNT(*) AS n,
+               MAX(s.started_at) AS ultimo,
+               COALESCE(SUM(s.status = 'skipped'), 0) AS ignorados
+          FROM segments s JOIN sessions ss ON ss.id = s.session_id
+         WHERE s.started_at >= ? AND COALESCE(s.app_name, ss.app_name) IS NOT NULL
+         GROUP BY COALESCE(s.app_name, ss.app_name), ss.source
+        """,
+        (inicio,),
+    ).fetchall()
+
+    config = _capture_config()
+    grupos: dict[str, dict] = {}
+
+    for row in rows:
+        rotulo = row["app_name"]
+        programa = rotulo.split(TITLE_SEP)[0].strip().lower()
+        titulo = rotulo.split(TITLE_SEP)[1].strip() if TITLE_SEP in rotulo else None
+
+        grupo = grupos.setdefault(programa, {
+            "programa": programa,
+            "source": row["source"],
+            "segmentos": 0,
+            "ignorados": 0,
+            "ultimo": row["ultimo"],
+            "titulos": {},
+        })
+        grupo["segmentos"] += row["n"]
+        grupo["ignorados"] += row["ignorados"]
+        grupo["ultimo"] = max(grupo["ultimo"], row["ultimo"])
+        if titulo:
+            grupo["titulos"][titulo] = grupo["titulos"].get(titulo, 0) + row["n"]
+
+    resultado = []
+    for grupo in grupos.values():
+        # A mesma função que decide na ingestão — assim a tela mostra o efeito
+        # real de cada item, em vez de deixar o usuário deduzir das listas.
+        permitido, motivo = should_transcribe(
+            grupo["programa"], grupo["source"],
+            allowlist=config.allowlist, blocklist=config.blocklist,
+        )
+        titulos = sorted(grupo["titulos"].items(), key=lambda t: t[1], reverse=True)
+        resultado.append({
+            "programa": grupo["programa"],
+            "source": grupo["source"],
+            "segmentos": grupo["segmentos"],
+            "ignorados": grupo["ignorados"],
+            "ultimo": grupo["ultimo"],
+            "permitido": permitido,
+            "motivo": motivo,
+            "titulos": [{"titulo": t, "segmentos": n} for t, n in titulos[:5]],
+        })
+
+    resultado.sort(key=lambda g: g["segmentos"], reverse=True)
+    return resultado[:limit]
 
 
 # ──────────────────────────────── operação ────────────────────────────────

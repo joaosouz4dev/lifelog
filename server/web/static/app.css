@@ -235,6 +235,117 @@ button:hover { border-color: var(--accent); }
   color: var(--muted);
 }
 
+/* ────────────────────────── configurações ────────────────────────── */
+
+.config-intro {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .8rem 1rem;
+  margin: 0 0 1.5rem;
+  font-size: .88rem;
+}
+
+.config-block { margin-bottom: 2rem; }
+
+.config-block h2 {
+  font-size: .8rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  margin: 0 0 .4rem;
+}
+
+.config-hint {
+  margin: 0 0 .7rem;
+  font-size: .8rem;
+  color: var(--muted);
+}
+
+.app-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .6rem .8rem;
+  margin-bottom: .4rem;
+}
+
+/* Excluído: visível, mas discreto — some do relatório, não da tela. */
+.app-item.is-excluded { opacity: .72; }
+
+.app-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .6rem;
+  align-items: center;
+  cursor: pointer;
+}
+
+.app-nome { font-weight: 600; }
+.app-meta { color: var(--muted); font-size: .78rem; margin-right: auto; }
+
+.tag.ok { color: var(--ok); border-color: var(--ok); }
+
+.app-titulos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+  margin: .5rem 0 0 1.6rem;
+}
+
+.titulo-sugerido {
+  background: none;
+  cursor: pointer;
+  font-size: .72rem;
+  color: var(--muted);
+}
+
+.titulo-sugerido:hover { color: var(--text); border-color: var(--accent); }
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  margin-bottom: .6rem;
+  min-height: 1.6rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: .15rem .3rem .15rem .7rem;
+  font-size: .82rem;
+}
+
+.chip-x {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 .35rem;
+  border-radius: 50%;
+}
+
+.chip-x:hover { color: var(--err); }
+
+.empty-inline { color: var(--muted); font-size: .82rem; font-style: italic; }
+
+.chip-form { display: flex; gap: .5rem; }
+.chip-form input { flex: 1 1 240px; min-width: 0; max-width: 380px; }
+
+.config-actions {
+  display: flex;
+  gap: .8rem;
+  align-items: center;
+  padding-top: .5rem;
+  border-top: 1px solid var(--border);
+}
+
 /* ─────────────────────────── relatórios ─────────────────────────── */
 
 .report-actions {

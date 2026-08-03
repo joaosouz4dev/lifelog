@@ -138,3 +138,35 @@ class DayStats(BaseModel):
     # Capturados mas fora da lista de permitidos — nunca transcritos.
     skipped: int = 0
     by_source: dict[str, int]
+
+
+# Um termo vazio casaria com qualquer coisa (`"" in alvo` é sempre True) e
+# transformaria a allowlist em "permite tudo" sem ninguém perceber.
+MAX_TERMOS = 200
+MAX_TAMANHO_TERMO = 200
+
+
+def _limpar_termos(termos: list[str]) -> list[str]:
+    vistos: list[str] = []
+    for termo in termos:
+        limpo = termo.strip().lower()
+        if limpo and limpo not in vistos:
+            vistos.append(limpo[:MAX_TAMANHO_TERMO])
+    return vistos[:MAX_TERMOS]
+
+
+class CaptureConfig(BaseModel):
+    """O que deve ser transcrito, editável pela interface.
+
+    Casa por pedaço de texto tanto no nome do programa quanto no título da
+    janela — é o título que revela o site aberto, já que no navegador tudo é
+    "chrome.exe".
+    """
+
+    allowlist: list[str] = []
+    blocklist: list[str] = []
+
+    @field_validator("allowlist", "blocklist")
+    @classmethod
+    def normalizar(cls, termos: list[str]) -> list[str]:
+        return _limpar_termos(termos)

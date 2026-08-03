@@ -17,6 +17,8 @@ import time
 
 import numpy as np
 
+import sounds
+
 log = logging.getLogger("dictation")
 
 SAMPLE_RATE = 16000
@@ -106,6 +108,7 @@ class DictationController:
         self._alvo_no_inicio = _janela_em_foco()
         self.ultimo_erro = None
         self.tap.comecar()
+        sounds.tocar(sounds.INICIO)
         log.info("ditado: gravando…")
 
         # O modelo pode estar descarregado (~28s para voltar). Aquecer agora,
@@ -120,8 +123,11 @@ class DictationController:
 
         audio = self.tap.terminar()
         if audio is None:
+            sounds.tocar(sounds.CANCELADO)
             log.info("ditado: nada falado")
             return
+
+        sounds.tocar(sounds.FIM)
 
         threading.Thread(target=self._processar, args=(audio,), daemon=True).start()
 
@@ -130,6 +136,7 @@ class DictationController:
         with self._lock:
             self.gravando = False
         self.tap.cancelar()
+        sounds.tocar(sounds.CANCELADO)
         log.info("ditado: cancelado")
 
     # ──────────────────────────── bastidores ────────────────────────────
@@ -148,11 +155,13 @@ class DictationController:
             texto = self._transcrever(audio)
         except Exception as exc:
             self.ultimo_erro = str(exc)
+            sounds.tocar(sounds.ERRO)
             log.warning("ditado: falha ao transcrever — %s", exc)
             return
 
         if not texto:
             self.ultimo_erro = "nada reconhecido"
+            sounds.tocar(sounds.ERRO)
             log.info("ditado: transcrição vazia")
             return
 
@@ -179,9 +188,12 @@ class DictationController:
     def _entregar(self, texto: str) -> None:
         """Digita no campo focado, ou deixa no clipboard se o alvo mudou."""
         try:
-            from typer import copiar, digitar
+            from text_input import copiar, digitar
         except ImportError:
-            log.warning("digitação indisponível neste sistema")
+            # Não engolir em silêncio: foi assim que a falha de import passou
+            # despercebida — o ditado transcrevia e o texto sumia.
+            log.exception("digitação indisponível: o texto não será entregue")
+            self.ultimo_erro = "digitação indisponível"
             return
 
         alvo_agora = _janela_em_foco()

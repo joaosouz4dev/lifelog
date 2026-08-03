@@ -15,7 +15,7 @@ CLIENTE = Path(__file__).resolve().parent.parent / "windows-client"
 if str(CLIENTE) not in sys.path:
     sys.path.insert(0, str(CLIENTE))
 
-typer = pytest.importorskip("typer", reason="a digitação só existe no Windows")
+typer = pytest.importorskip("text_input", reason="a digitação só existe no Windows")
 
 
 @pytest.fixture
@@ -93,3 +93,22 @@ def test_texto_longo_vai_pelo_clipboard(eventos, monkeypatch):
 def test_texto_vazio_nao_envia_nada(eventos):
     assert typer.digitar("") is False
     assert eventos == []
+
+
+def test_o_modulo_nao_colide_com_pacote_do_pypi():
+    """Regressão: este módulo já se chamou `typer`.
+
+    Existe um pacote `typer` no PyPI — dependência do FastAPI — e o import
+    resolvia para ele. O ditado transcrevia normalmente e o texto sumia, sem
+    erro visível, porque o `except ImportError` engolia a falha.
+    """
+    import importlib.util
+
+    modulo = typer.__name__
+    assert modulo != "typer", "o nome colide com um pacote instalado"
+
+    spec = importlib.util.find_spec(modulo)
+    assert spec is not None
+    assert "site-packages" not in (spec.origin or ""), (
+        f"'{modulo}' está resolvendo para um pacote externo, não para o nosso"
+    )

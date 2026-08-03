@@ -95,6 +95,40 @@ def test_texto_vazio_nao_envia_nada(eventos):
     assert eventos == []
 
 
+def test_a_struct_tem_o_tamanho_que_o_windows_espera():
+    """Regressão: a união estava sem o MOUSEINPUT.
+
+    `SendInput` valida o tamanho da struct, e quem o define é o maior membro
+    da união — o MOUSEINPUT (32 bytes) e não o KEYBDINPUT (24). Sem ele a
+    struct saía com 32 bytes em vez de 40, e toda digitação falhava com
+    ERROR_INVALID_PARAMETER sem erro visível: o ditado transcrevia e o texto
+    não aparecia em lugar nenhum.
+    """
+    import ctypes
+
+    assert ctypes.sizeof(typer._INPUT) == 40, (
+        "a struct precisa ter 40 bytes no x64; o SendInput recusa outros tamanhos"
+    )
+
+
+def test_sendinput_e_aceito_pelo_windows():
+    """Chama a API de verdade e confere que ela não recusou.
+
+    Os outros testes espionam o SendInput e não veriam uma struct malformada.
+    """
+    import ctypes
+
+    ctypes.windll.kernel32.SetLastError(0)
+    assert typer.digitar("") is False  # não digita nada, mas exercita o caminho
+
+    # Uma tecla morta (só o release) não altera nada visível na tela, mas
+    # passa pela mesma validação de struct.
+    evento = typer._evento(0, 0x20, typer.KEYEVENTF_UNICODE | typer.KEYEVENTF_KEYUP)
+    typer._enviar([evento])
+
+    assert ctypes.windll.kernel32.GetLastError() == 0, "o Windows recusou a struct"
+
+
 def test_o_modulo_nao_colide_com_pacote_do_pypi():
     """Regressão: este módulo já se chamou `typer`.
 

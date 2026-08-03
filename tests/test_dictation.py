@@ -144,3 +144,68 @@ def test_parse_recusa_combinacao_invalida(ruim):
 
     with pytest.raises(ValueError):
         parse(ruim)
+
+
+# ─────────────────────────── entrega do texto ───────────────────────────
+
+
+class _EntregaEspiada:
+    """Substitui text_input para observar o que a entrega decidiu."""
+
+    def __init__(self):
+        self.digitado: list[str] = []
+        self.copiado: list[str] = []
+
+
+@pytest.fixture
+def entrega(monkeypatch):
+    import text_input
+
+    espiao = _EntregaEspiada()
+    monkeypatch.setattr(text_input, "digitar", lambda t: espiao.digitado.append(t) or True)
+    monkeypatch.setattr(text_input, "copiar", lambda t: espiao.copiado.append(t) or True)
+    return espiao
+
+
+def _controlador():
+    from dictation import DictationController, DictationTap
+
+    return DictationController("http://127.0.0.1:8000", DictationTap())
+
+
+def test_o_texto_vai_para_o_campo(entrega):
+    """O ditado existe para escrever onde o cursor está."""
+    ctrl = _controlador()
+
+    ctrl._entregar("bom dia")
+
+    assert entrega.digitado == ["bom dia"]
+    assert ctrl.ultimo_erro is None
+
+
+def test_digita_mesmo_se_o_foco_mudou(entrega):
+    """Houve uma verificação de foco aqui, e ela errava na prática.
+
+    Dentro de um mesmo programa o foco troca o tempo todo (abas, popups, a
+    própria combinação de teclas), e o texto quase nunca chegava ao campo —
+    ia para o clipboard. Entre proteger de um cenário raro e funcionar no
+    comum, o comum ganha.
+    """
+    ctrl = _controlador()
+
+    ctrl._entregar("bom dia")
+
+    assert entrega.digitado == ["bom dia"]
+    assert entrega.copiado == []
+
+
+def test_falha_na_digitacao_e_registrada(entrega, monkeypatch):
+    """Sem isto, uma recusa do Windows viraria silêncio outra vez."""
+    import text_input
+
+    monkeypatch.setattr(text_input, "digitar", lambda t: False)
+    ctrl = _controlador()
+
+    ctrl._entregar("bom dia")
+
+    assert ctrl.ultimo_erro == "não foi possível digitar"

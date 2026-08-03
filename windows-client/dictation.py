@@ -93,7 +93,6 @@ class DictationController:
         self.ultimo_erro: str | None = None
         self.gravando = False
         self._lock = threading.Lock()
-        self._alvo_no_inicio = None
 
     # ──────────────────────────── ciclo da tecla ────────────────────────────
 
@@ -103,9 +102,6 @@ class DictationController:
                 return
             self.gravando = True
 
-        # Guarda quem estava em foco: se a pessoa trocar de janela no meio da
-        # fala, digitar no destino errado pode ser desastroso.
-        self._alvo_no_inicio = _janela_em_foco()
         self.ultimo_erro = None
         self.tap.comecar()
         sounds.tocar(sounds.INICIO)
@@ -186,9 +182,19 @@ class DictationController:
         return (resposta.json().get("text") or "").strip()
 
     def _entregar(self, texto: str) -> None:
-        """Digita no campo focado, ou deixa no clipboard se o alvo mudou."""
+        """Digita no campo em foco.
+
+        Sempre digita, mesmo que o foco tenha mudado desde o início da fala.
+        Houve uma verificação que desviava para o clipboard nesse caso, mas
+        ela errava na prática: dentro de um mesmo programa o foco troca o
+        tempo todo, e o texto quase nunca chegava ao campo. Entre proteger de
+        um cenário raro e funcionar no comum, o comum ganha.
+
+        O risco fica registrado: se você trocar de janela nos ~2s entre soltar
+        a tecla e o texto voltar, ele é digitado onde o cursor estiver.
+        """
         try:
-            from text_input import copiar, digitar
+            from text_input import digitar
         except ImportError:
             # Não engolir em silêncio: foi assim que a falha de import passou
             # despercebida — o ditado transcrevia e o texto sumia.
@@ -196,23 +202,8 @@ class DictationController:
             self.ultimo_erro = "digitação indisponível"
             return
 
-        alvo_agora = _janela_em_foco()
-        if self._alvo_no_inicio is not None and alvo_agora != self._alvo_no_inicio:
-            # Digitar aqui mandaria o texto para a janela errada — num
-            # terminal, isso pode executar comandos.
-            copiar(texto)
-            self.ultimo_erro = "janela mudou — texto copiado"
-            log.info("ditado: a janela mudou; texto no clipboard")
-            return
-
-        digitar(texto)
+        if not digitar(texto):
+            self.ultimo_erro = "não foi possível digitar"
+            log.warning("ditado: a digitação falhou")
 
 
-def _janela_em_foco():
-    """Handle da janela em primeiro plano, ou None fora do Windows."""
-    try:
-        import ctypes
-
-        return ctypes.windll.user32.GetForegroundWindow()
-    except Exception:
-        return None

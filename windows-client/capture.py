@@ -14,6 +14,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -128,6 +129,8 @@ class CaptureTrack(threading.Thread):
         bitrate: int = 24000,
         probe=None,
         tap=None,
+        gate=None,
+        buffer_antes_s: float = 10.0,
     ):
         super().__init__(name=f"capture-{source}", daemon=True)
         self.source = source
@@ -145,6 +148,13 @@ class CaptureTrack(threading.Thread):
         # do microfone recebe um: ditado é a voz de quem fala, e alimentar
         # com o loopback misturaria o som do sistema na frase.
         self.tap = tap
+        # Decide se há reunião em curso. None mantém o comportamento antigo:
+        # grava sempre.
+        self.gate = gate
+        # Últimos segundos antes de o gate abrir. Os chunks chegam de 100ms,
+        # então o deque guarda a janela inteira sem crescer sem limite.
+        self._pre_reuniao: deque[np.ndarray] = deque(maxlen=int(buffer_antes_s * 10))
+        self._fora_de_reuniao = False
         # `_stopping`, não `_stop`: threading.Thread já tem um método _stop()
         # interno, e sobrescrevê-lo com um Event faz join() estourar TypeError.
         self._stopping = threading.Event()
@@ -217,6 +227,32 @@ class CaptureTrack(threading.Thread):
                     log.info("[%s] retomado", self.source)
                     was_paused = False
                     stream_start = datetime.now()
+
+                # Gate de reunião: fora de uma chamada nada é gravado. Fica
+                # antes do VAD de propósito — cortar aqui evita a inferência
+                # do Silero a cada 100 ms, o ffmpeg, a escrita em disco e o
+                # upload. É o mesmo lugar onde a pausa já opera.
+                if self.gate is not None and not self.gate.em_reuniao:
+                    # Guarda os últimos segundos: quando a reunião começa, o
+                    # detector leva um instante para perceber, e sem isto as
+                    # primeiras palavras se perderiam.
+                    self._pre_reuniao.append(chunk)
+                    if not self._fora_de_reuniao:
+                        log.info("[%s] fora de reunião — captura em espera", self.source)
+                        self._flush()
+                        self._fora_de_reuniao = True
+                    continue
+
+                if self._fora_de_reuniao:
+                    log.info("[%s] reunião detectada — gravando", self.source)
+                    self._fora_de_reuniao = False
+                    stream_start = datetime.now()
+                    # O áudio que antecedeu a detecção entra primeiro, na
+                    # ordem em que foi falado.
+                    for anterior in self._pre_reuniao:
+                        for segment in self.vad.process(anterior):
+                            self._emit(segment, stream_start)
+                self._pre_reuniao.clear()
 
                 for segment in self.vad.process(chunk):
                     self._emit(segment, stream_start)

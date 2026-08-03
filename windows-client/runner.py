@@ -18,6 +18,7 @@ from audio_source import AudioSourceProbe  # noqa: E402
 from buffer import SegmentQueue  # noqa: E402
 from capture import CaptureTrack, close_audio, resolve_device  # noqa: E402
 from dictation import DictationController, DictationTap  # noqa: E402
+from meeting import APPS_DE_REUNIAO, MeetingDetector  # noqa: E402
 from uploader import Uploader  # noqa: E402
 from vad import ensure_model  # noqa: E402
 
@@ -67,6 +68,18 @@ class CaptureRunner:
         # COM a cada leitura, e só a trilha de sistema o usa de fato.
         probe = AudioSourceProbe()
 
+        # Só grava durante reuniões. Sem isto o Lifelog registra o dia inteiro,
+        # inclusive a voz de terceiros que passa perto do microfone.
+        self.meeting = None
+        if cfg.get("capture.meeting_gate.enabled", False):
+            self.meeting = MeetingDetector(
+                probe.titles,
+                apps=tuple(cfg.get("capture.meeting_gate.apps", APPS_DE_REUNIAO)),
+                atraso_fechamento_s=float(
+                    cfg.get("capture.meeting_gate.atraso_fechamento_s", 15)
+                ),
+            )
+
         # O ditado desvia o áudio da trilha do microfone em vez de abrir um
         # dispositivo próprio: um segundo PyAudio() causa segfault no WASAPI.
         self._config = cfg
@@ -95,6 +108,15 @@ class CaptureRunner:
                     tap=self.dictation.tap if (
                         self.dictation is not None and source == "mic"
                     ) else None,
+                    # O microfone só é gateado se configurado: gatear a
+                    # própria voz pode fazer perder uma conversa presencial.
+                    gate=self.meeting if (
+                        source != "mic"
+                        or cfg.get("capture.meeting_gate.gate_mic", True)
+                    ) else None,
+                    buffer_antes_s=float(
+                        cfg.get("capture.meeting_gate.buffer_antes_s", 10)
+                    ),
                 )
             )
 
@@ -117,6 +139,8 @@ class CaptureRunner:
         for track in self.tracks:
             track.start()
         self.uploader.start()
+        if self.meeting is not None:
+            self.meeting.start()
         self._iniciar_ditado()
         self._started = True
         log.info(
@@ -166,6 +190,8 @@ class CaptureRunner:
     def stop(self, timeout: float = 10.0) -> None:
         if self.hotkey is not None:
             self.hotkey.stop()
+        if self.meeting is not None:
+            self.meeting.stop()
         for track in self.tracks:
             track.stop()
         self.uploader.stop()
@@ -189,6 +215,16 @@ class CaptureRunner:
             "queued_seconds": stats["queued_seconds"],
             "stuck": stats["stuck"],
             "dictation": self._status_ditado(),
+            "meeting": self._status_reuniao(),
+        }
+
+    def _status_reuniao(self) -> dict | None:
+        """Sem isto não há como saber por que a captura está parada."""
+        if self.meeting is None:
+            return None
+        return {
+            "em_reuniao": self.meeting.em_reuniao,
+            "motivo": self.meeting.motivo,
         }
 
     def _status_ditado(self) -> dict | None:

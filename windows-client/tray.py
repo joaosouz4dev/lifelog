@@ -114,6 +114,17 @@ class LifelogTray:
             return "Pausar captura"
         return "Retomar captura" if self.runner.is_paused else "Pausar captura"
 
+    def _meeting_line(self, _item=None) -> str:
+        """Diz por que a captura está parada — senão parece defeito."""
+        if self.runner is None:
+            return ""
+        estado = self.runner.status().get("meeting")
+        if estado is None:
+            return ""  # gate desligado: a captura é contínua, nada a explicar
+        if estado["em_reuniao"]:
+            return f"Gravando: {estado['motivo'][:44]}"
+        return f"Em espera: {estado['motivo'][:44]}"
+
     def _dictation_line(self, _item=None) -> str:
         """Sem isto não há como saber se o atalho pegou ou está tomado."""
         if self.runner is None:
@@ -299,6 +310,7 @@ class LifelogTray:
         menu = pystray.Menu(
             pystray.MenuItem(self._status_line, None, enabled=False),
             pystray.MenuItem(self._sources_line, None, enabled=False),
+            pystray.MenuItem(self._meeting_line, None, enabled=False),
             pystray.MenuItem(self._dictation_line, None, enabled=False),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(self._pause_label, self._toggle_pause, default=True),

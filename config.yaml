@@ -152,6 +152,41 @@ capture:
     - bitwarden
     - keepass
 
+  # ── Só gravar durante reuniões ─────────────────────────────
+  # Com isto ligado, o Lifelog fica em silêncio fora de chamadas — nada é
+  # gravado em disco, nem o microfone. O ditado por atalho continua
+  # funcionando normalmente.
+  #
+  # A detecção combina dois sinais: o processo tem o microfone aberto (o
+  # Windows registra isso) E é um app de reunião. Só o microfone não basta —
+  # jogos e OBS também o abrem.
+  #
+  # Em caso de falha o gate ABRE, nunca fecha: perder uma reunião inteira por
+  # causa de um bug no detector é pior que gravar demais.
+  meeting_gate:
+    enabled: false          # mude para true quando quiser só reuniões
+    # false mantém o microfone sempre gravando (sua própria voz).
+    gate_mic: true
+    # Segundos guardados antes de o gate abrir: o detector leva um instante
+    # para perceber a reunião, e sem isto as primeiras palavras se perdem.
+    buffer_antes_s: 10
+    # Segundos que o gate segue aberto depois da reunião sumir, para não
+    # cortar o "tchau, até semana que vem".
+    atraso_fechamento_s: 15
+    # Processos que, com o microfone aberto, indicam reunião. Navegadores
+    # precisam também de um título de reunião — a lista está em
+    # server/classify.py (_CONVERSATION_SITES).
+    apps:
+      - zoom
+      - teams
+      - webex
+      - gotomeeting
+      - ringcentral
+      - bluejeans
+      - whereby
+      - discord
+      - slack
+
 # ─────────────────────────────────────────────────────────────
 # Ditado: segure o atalho, fale, solte, e o texto vai para o
 # campo que estiver em foco. Esc no meio cancela.

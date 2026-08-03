@@ -101,6 +101,77 @@ def test_estado_informa_quanto_falta_para_expirar(api):
     assert 0 < corpo["expira_em_s"] <= meeting_state.TTL_SEGUNDOS
 
 
+# ─────────────────── a lista do usuário manda ───────────────────
+
+
+@pytest.fixture
+def com_allowlist(monkeypatch, tmp_path):
+    """Isola a config numa raiz descartável."""
+    import yaml
+
+    from server import config as config_mod
+
+    def configurar(permitidos):
+        (tmp_path / "config.yaml").write_text(
+            yaml.safe_dump({"capture": {"allowlist": permitidos}}), encoding="utf-8"
+        )
+        monkeypatch.setattr(config_mod, "ROOT", tmp_path)
+        monkeypatch.setattr(config_mod, "IS_FROZEN", False)
+        config_mod.reset_cache()
+
+    yield configurar
+    from server import config as config_mod
+
+    config_mod.reset_cache()
+
+
+def test_servico_fora_da_lista_e_ignorado(api, com_allowlist):
+    """O caso real: tirei o Discord das preferências e ele continuava
+    sendo gravado, porque a extensão reportava com a lista dela."""
+    com_allowlist(["meet", "zoom"])
+
+    corpo = api.post(
+        "/api/meeting/state",
+        json={"ativa": True, "servico": "discord", "titulo": "Discord | #blog"},
+    ).json()
+
+    assert corpo["ativa"] is False
+
+
+def test_servico_na_lista_e_aceito(api, com_allowlist):
+    com_allowlist(["meet", "zoom"])
+
+    corpo = api.post(
+        "/api/meeting/state",
+        json={"ativa": True, "servico": "meet", "titulo": "Reunião — Google Meet"},
+    ).json()
+
+    assert corpo["ativa"] is True
+
+
+def test_o_titulo_tambem_conta(api, com_allowlist):
+    """Um termo pode casar pelo título, não só pelo nome do serviço."""
+    com_allowlist(["reunião semanal"])
+
+    corpo = api.post(
+        "/api/meeting/state",
+        json={"ativa": True, "servico": "jitsi", "titulo": "Reunião semanal"},
+    ).json()
+
+    assert corpo["ativa"] is True
+
+
+def test_sem_lista_aceita_tudo(api, com_allowlist):
+    """Fechar por omissão faria perder reunião — o padrão é aceitar."""
+    com_allowlist([])
+
+    corpo = api.post(
+        "/api/meeting/state", json={"ativa": True, "servico": "qualquer-coisa"}
+    ).json()
+
+    assert corpo["ativa"] is True
+
+
 # ──────────────────────────── modo manual ────────────────────────────
 
 

@@ -51,9 +51,56 @@ def modo_atual() -> str:
         return _modo
 
 
+def _servico_permitido(servico: str | None, titulo: str | None) -> bool:
+    """O serviço reportado está na lista de permitidos do usuário?
+
+    A lista é a mesma `capture.allowlist` da tela de configuração — quem
+    tirar o Discord de lá espera que ele pare de ser gravado, e não que a
+    extensão continue reportando por conta própria.
+
+    Sem lista configurada, aceita tudo: é o comportamento antigo, e fechar
+    por omissão faria perder reunião.
+    """
+    try:
+        from .config import get_config
+
+        permitidos = get_config().get("capture.allowlist", None)
+    except Exception:
+        return True
+
+    if not permitidos:
+        return True
+
+    alvo = f"{servico or ''} {titulo or ''}".strip().lower()
+    if not alvo:
+        # Relato sem identificação: não dá para julgar, e recusar faria
+        # perder a reunião. Aceita — o padrão em toda decisão duvidosa aqui.
+        return True
+
+    for bruto in permitidos:
+        termo = bruto.lower().strip()
+        if not termo:
+            continue
+        # Casa nos dois sentidos: a lista tem "google meet" e a extensão
+        # reporta só "meet". Exigir a direção certa faria o usuário adivinhar
+        # o formato interno.
+        if termo in alvo or any(p and p in termo for p in alvo.split()):
+            return True
+    return False
+
+
 def reportar(*, ativa: bool, servico: str | None = None, titulo: str | None = None) -> dict:
-    """Registra o que a extensão viu. Devolve o estado resultante."""
+    """Registra o que a extensão viu. Devolve o estado resultante.
+
+    Um relato de reunião num serviço que você tirou da lista é descartado
+    aqui. Sem isto a extensão decidiria sozinha o que gravar, com a lista
+    dela — e o Discord voltava a ser gravado mesmo depois de removido das
+    preferências.
+    """
     global _estado, _expira_em
+
+    if ativa and not _servico_permitido(servico, titulo):
+        return atual()
 
     with _lock:
         if not ativa:

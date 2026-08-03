@@ -105,7 +105,7 @@ class DictationController:
 
         # Guarda quem estava em foco: se a pessoa trocar de janela no meio da
         # fala, digitar no destino errado pode ser desastroso.
-        self._alvo_no_inicio = _janela_em_foco()
+        self._alvo_no_inicio = _processo_da_janela(_janela_em_foco())
         self.ultimo_erro = None
         self.tap.comecar()
         sounds.tocar(sounds.INICIO)
@@ -196,14 +196,16 @@ class DictationController:
             self.ultimo_erro = "digitação indisponível"
             return
 
-        alvo_agora = _janela_em_foco()
-        if self._alvo_no_inicio is not None and alvo_agora != self._alvo_no_inicio:
-            # Digitar aqui mandaria o texto para a janela errada — num
-            # terminal, isso pode executar comandos.
-            copiar(texto)
-            self.ultimo_erro = "janela mudou — texto copiado"
-            log.info("ditado: a janela mudou; texto no clipboard")
-            return
+        # Compara o processo dono, não o handle: um mesmo app troca de janela
+        # o tempo todo (abas, popups, caixas de busca), e comparar handles
+        # mandava quase tudo para o clipboard. O que importa é não digitar
+        # num programa diferente daquele em que a pessoa estava.
+        if self._alvo_no_inicio is not None:
+            if _processo_da_janela(_janela_em_foco()) != self._alvo_no_inicio:
+                copiar(texto)
+                self.ultimo_erro = "outro programa em foco — texto copiado"
+                log.info("ditado: o foco mudou de programa; texto no clipboard")
+                return
 
         digitar(texto)
 
@@ -214,5 +216,25 @@ def _janela_em_foco():
         import ctypes
 
         return ctypes.windll.user32.GetForegroundWindow()
+    except Exception:
+        return None
+
+
+def _processo_da_janela(hwnd) -> int | None:
+    """PID do dono da janela.
+
+    O ditado compara processos, não handles: dentro de um mesmo programa a
+    janela em foco muda o tempo todo (abas, popups, caixa de busca), e
+    comparar handles mandava quase todo ditado para o clipboard.
+    """
+    if hwnd is None:
+        return None
+    try:
+        import ctypes
+        import ctypes.wintypes as wt
+
+        pid = wt.DWORD()
+        ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        return pid.value or None
     except Exception:
         return None

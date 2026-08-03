@@ -144,3 +144,69 @@ def test_parse_recusa_combinacao_invalida(ruim):
 
     with pytest.raises(ValueError):
         parse(ruim)
+
+
+# ─────────────────────────── entrega do texto ───────────────────────────
+
+
+class _EntregaEspiada:
+    """Substitui text_input para observar o que a entrega decidiu."""
+
+    def __init__(self):
+        self.digitado: list[str] = []
+        self.copiado: list[str] = []
+
+
+@pytest.fixture
+def entrega(monkeypatch):
+    import text_input
+
+    espiao = _EntregaEspiada()
+    monkeypatch.setattr(text_input, "digitar", lambda t: espiao.digitado.append(t) or True)
+    monkeypatch.setattr(text_input, "copiar", lambda t: espiao.copiado.append(t) or True)
+    return espiao
+
+
+def _controlador():
+    from dictation import DictationController, DictationTap
+
+    return DictationController("http://127.0.0.1:8000", DictationTap())
+
+
+def test_digita_quando_o_programa_e_o_mesmo(entrega, monkeypatch):
+    """O caso normal. Comparar handles em vez de processos quebrava aqui:
+    dentro de um mesmo app a janela em foco muda a cada aba ou popup."""
+    import dictation
+
+    monkeypatch.setattr(dictation, "_processo_da_janela", lambda h: 4242)
+    ctrl = _controlador()
+    ctrl._alvo_no_inicio = 4242
+
+    ctrl._entregar("bom dia")
+
+    assert entrega.digitado == ["bom dia"]
+    assert ctrl.ultimo_erro is None
+
+
+def test_copia_quando_o_foco_mudou_de_programa(entrega, monkeypatch):
+    """Digitar no programa errado pode executar comandos num terminal."""
+    import dictation
+
+    monkeypatch.setattr(dictation, "_processo_da_janela", lambda h: 9999)
+    ctrl = _controlador()
+    ctrl._alvo_no_inicio = 4242
+
+    ctrl._entregar("bom dia")
+
+    assert entrega.digitado == []
+    assert entrega.copiado == ["bom dia"]
+    assert "outro programa" in ctrl.ultimo_erro
+
+
+def test_sem_alvo_guardado_entrega_direto(entrega):
+    ctrl = _controlador()
+    ctrl._alvo_no_inicio = None
+
+    ctrl._entregar("bom dia")
+
+    assert entrega.digitado == ["bom dia"]

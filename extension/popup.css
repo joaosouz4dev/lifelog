@@ -1,5 +1,5 @@
-/* Mesma paleta da interface web: o popup é o mesmo produto, visto de outro
-   lugar. Cores de app.css. */
+/* Mesma paleta da interface web: o popup é o mesmo produto visto de outro
+   lugar. Cores de server/web/static/app.css. */
 :root {
   --bg: #faf9f7;
   --surface: #ffffff;
@@ -7,9 +7,8 @@
   --text: #1c1b19;
   --muted: #6b6862;
   --accent: #b45f3f;
-  --ok: #2e7d52;
+  --gravando: #c0392b;
   --err: #b43f3f;
-  --radius: 10px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -20,7 +19,7 @@
     --text: #ecebe8;
     --muted: #9a968f;
     --accent: #e08a63;
-    --ok: #5cba87;
+    --gravando: #e0685a;
     --err: #dd6a6a;
   }
 }
@@ -28,180 +27,200 @@
 * { box-sizing: border-box; }
 
 body {
-  width: 330px;
+  width: 300px;
   margin: 0;
-  padding: 0 0 .8rem;
   background: var(--bg);
   color: var(--text);
   font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
+/* ─────────────────────── estado (o protagonista) ───────────────────────
+   Ocupa o topo inteiro com fundo próprio. É a única coisa que a pessoa
+   abre o popup para saber; o resto é contexto. */
+
 header {
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-  padding: .7rem .9rem;
-  border-bottom: 1px solid var(--border);
-}
-
-header img { border-radius: 50%; }
-h1 { margin: 0; font-size: .95rem; letter-spacing: .02em; }
-.versao { margin-left: auto; font-size: .7rem; color: var(--muted); }
-
-/* ───────────────────────── estado ───────────────────────── */
-
-.estado {
-  display: flex;
-  align-items: center;
-  gap: .7rem;
-  padding: .8rem .9rem;
+  padding: .75rem .9rem .85rem;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
 
-.estado strong { display: block; font-size: .9rem; }
-.estado small { color: var(--muted); font-size: .75rem; }
+.marca {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  margin-bottom: .7rem;
+  font-size: .7rem;
+  color: var(--muted);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
 
-/* O ponto pulsa enquanto grava: movimento diz "acontecendo agora" melhor
-   que qualquer palavra. */
+.marca img { border-radius: 50%; opacity: .85; }
+#versao { margin-left: auto; text-transform: none; letter-spacing: 0; }
+
+.estado {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+
+.motivo {
+  margin: .15rem 0 0 1.15rem;
+  font-size: .76rem;
+  color: var(--muted);
+  /* Título de aba é longo; uma linha só, cortada com reticências. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .ponto {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
   flex: 0 0 auto;
   border-radius: 50%;
   background: var(--muted);
 }
 
+/* Pulsar diz "acontecendo agora" melhor que qualquer palavra. */
 .ponto.gravando {
-  background: var(--err);
-  animation: pulsar 1.8s ease-in-out infinite;
+  background: var(--gravando);
+  animation: pulsar 2s ease-in-out infinite;
 }
 
-.ponto.espera { background: var(--muted); }
 .ponto.erro { background: var(--accent); }
 
 @keyframes pulsar {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgb(180 63 63 / .5); }
-  50% { opacity: .75; box-shadow: 0 0 0 5px rgb(180 63 63 / 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgb(192 57 43 / .45); }
+  70% { box-shadow: 0 0 0 6px rgb(192 57 43 / 0); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .ponto.gravando { animation: none; }
 }
 
-/* ───────────────────────── modos ───────────────────────── */
+/* ─────────────────────────── controles ─────────────────────────── */
+
+main { padding: .85rem .9rem; }
 
 .modos {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: .35rem;
-  padding: .8rem .9rem;
-}
-
-.modo {
   display: flex;
-  flex-direction: column;
-  gap: .1rem;
-  padding: .5rem .3rem;
-  font: inherit;
-  font-size: .78rem;
-  color: var(--text);
+  gap: 2px;
+  padding: 2px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  cursor: pointer;
-  text-align: center;
+  border-radius: 8px;
 }
 
-.modo small { color: var(--muted); font-size: .65rem; line-height: 1.25; }
-.modo:hover { border-color: var(--accent); }
+/* Segmented control: as três opções são exclusivas, e o formato já diz
+   isso — mais claro que três botões soltos. */
+.modo {
+  flex: 1;
+  padding: .4rem .2rem;
+  font: inherit;
+  font-size: .8rem;
+  color: var(--muted);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.modo:hover { color: var(--text); }
 
 .modo.ativo {
-  border-color: var(--accent);
-  background: var(--accent);
   color: #fff;
+  background: var(--accent);
 }
 
-.modo.ativo small { color: rgb(255 255 255 / .8); }
-
-/* ───────────────────────── números ───────────────────────── */
+/* ─────────────────────────── números ─────────────────────────── */
 
 .numeros {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: .5rem;
-  padding: 0 .9rem .8rem;
-  text-align: center;
-}
-
-.numeros b { display: block; font-size: 1.05rem; }
-.numeros small { color: var(--muted); font-size: .68rem; }
-
-/* ───────────────────── últimas transcrições ───────────────────── */
-
-.recentes { padding: 0 .9rem; }
-
-.recentes h2 {
-  margin: 0 0 .4rem;
-  font-size: .68rem;
-  text-transform: uppercase;
-  letter-spacing: .06em;
+  display: flex;
+  gap: 1rem;
+  margin-top: .8rem;
+  font-size: .74rem;
   color: var(--muted);
 }
 
-#lista-recentes {
-  margin: 0;
-  padding: 0;
+.numeros b {
+  color: var(--text);
+  font-size: .95rem;
+  font-weight: 600;
+  margin-right: .15rem;
+}
+
+/* ───────────────────── últimas transcrições ─────────────────────
+   Sem título de seção: o conteúdo se explica, e o rótulo só roubava
+   espaço num popup de 300px. */
+
+.recentes {
+  margin: .8rem 0 0;
+  padding: .7rem 0 0;
+  border-top: 1px solid var(--border);
   list-style: none;
-  max-height: 132px;
+  max-height: 148px;
   overflow-y: auto;
 }
 
-#lista-recentes li {
-  padding: .4rem .55rem;
-  margin-bottom: .25rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+.recentes li {
+  display: flex;
+  gap: .5rem;
+  padding: .3rem 0;
   font-size: .78rem;
-  /* Transcrição longa não pode esticar o popup. */
-  overflow-wrap: anywhere;
+  line-height: 1.45;
 }
 
-#lista-recentes .hora {
-  display: block;
+.recentes .hora {
+  flex: 0 0 auto;
   color: var(--muted);
-  font-size: .66rem;
+  font-size: .7rem;
   font-variant-numeric: tabular-nums;
+  padding-top: .1rem;
 }
 
-#lista-recentes .vazio {
+.recentes .texto { overflow-wrap: anywhere; }
+
+.recentes .vazio {
   color: var(--muted);
   font-style: italic;
-  background: none;
-  border: none;
+  padding: .1rem 0;
 }
 
-/* ───────────────────────── rodapé ───────────────────────── */
+/* ─────────────────────────── rodapé ─────────────────────────── */
 
-footer { padding: .8rem .9rem 0; }
+footer {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: 0 .9rem .85rem;
+}
 
 #abrir {
-  width: 100%;
-  padding: .5rem;
+  flex: 0 0 auto;
+  padding: .35rem .7rem;
   font: inherit;
-  font-size: .8rem;
-  color: var(--text);
-  background: var(--surface);
+  font-size: .76rem;
+  color: var(--muted);
+  background: none;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 6px;
   cursor: pointer;
 }
 
-#abrir:hover { border-color: var(--accent); }
+#abrir:hover { color: var(--text); border-color: var(--accent); }
 
 .erro {
-  margin: .6rem 0 0;
-  font-size: .75rem;
+  font-size: .72rem;
   color: var(--err);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

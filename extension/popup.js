@@ -39,19 +39,19 @@ function mostrarEstado(estado) {
   ponto.className = 'ponto';
 
   if (estado.modo === 'nunca') {
-    ponto.classList.add('espera');
-    titulo.textContent = 'Não gravando';
-    motivo.textContent = 'desligado manualmente';
+    titulo.textContent = 'Pausado';
+    motivo.textContent = 'você desligou a gravação';
   } else if (estado.ativa) {
     ponto.classList.add('gravando');
     titulo.textContent = 'Gravando';
+    // O título da aba diz mais que o nome do serviço, e cabe numa linha
+    // com reticências.
     motivo.textContent = estado.modo === 'sempre'
-      ? 'forçado manualmente'
-      : `${estado.servico || 'reunião'}${estado.titulo ? ` — ${estado.titulo}` : ''}`;
+      ? 'ligado manualmente'
+      : (estado.titulo || estado.servico || 'reunião em curso');
   } else {
-    ponto.classList.add('espera');
-    titulo.textContent = 'Em espera';
-    motivo.textContent = 'nenhuma reunião detectada';
+    titulo.textContent = 'Aguardando';
+    motivo.textContent = 'grava quando começar uma reunião';
   }
 
   for (const botao of document.querySelectorAll('.modo')) {
@@ -62,7 +62,11 @@ function mostrarEstado(estado) {
 function mostrarNumeros(stats) {
   $('#n-segmentos').textContent = stats.total_segments ?? 0;
   $('#n-fala').textContent = duracao(stats.total_speech_ms || 0);
-  $('#n-fila').textContent = stats.pending ?? 0;
+
+  // A fila só aparece quando há algo nela: "0 na fila" é ruído.
+  const pendentes = stats.pending ?? 0;
+  $('#n-fila').textContent = pendentes;
+  $('#fila-bloco').hidden = pendentes === 0;
 }
 
 function mostrarRecentes(segmentos) {
@@ -71,16 +75,27 @@ function mostrarRecentes(segmentos) {
   const comTexto = segmentos.filter((s) => s.transcript && s.transcript.trim());
 
   if (!comTexto.length) {
-    lista.innerHTML = '<li class="vazio">Nada transcrito hoje ainda.</li>';
+    lista.replaceChildren(
+      Object.assign(document.createElement('li'), {
+        className: 'vazio',
+        textContent: 'Nada transcrito hoje ainda.',
+      })
+    );
     return;
   }
 
   lista.replaceChildren(...comTexto.slice(0, 5).map((s) => {
     const li = document.createElement('li');
+
     const quando = document.createElement('span');
     quando.className = 'hora';
     quando.textContent = hora(s.started_at);
-    li.append(quando, document.createTextNode(s.transcript.trim()));
+
+    const texto = document.createElement('span');
+    texto.className = 'texto';
+    texto.textContent = s.transcript.trim();
+
+    li.append(quando, texto);
     return li;
   }));
 }

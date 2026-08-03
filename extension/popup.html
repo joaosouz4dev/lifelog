@@ -6,53 +6,43 @@
 </head>
 <body>
 
-<header>
-  <img src="icon48.png" alt="" width="20" height="20">
-  <h1>Lifelog</h1>
-  <span id="versao" class="versao"></span>
+<!-- O estado ocupa o topo inteiro: é a única coisa que a pessoa abre o
+     popup para saber. O resto é contexto. -->
+<header id="cabecalho">
+  <div class="marca">
+    <img src="icon48.png" alt="" width="16" height="16">
+    <span>Lifelog</span>
+    <span id="versao"></span>
+  </div>
+
+  <div class="estado">
+    <span class="ponto" id="ponto"></span>
+    <h1 id="estado-titulo">Verificando…</h1>
+  </div>
+  <p class="motivo" id="estado-motivo"></p>
 </header>
 
-<!-- Estado da gravação: a primeira coisa que a pessoa quer saber. -->
-<section id="estado" class="estado">
-  <span class="ponto" id="ponto"></span>
-  <div>
-    <strong id="estado-titulo">Verificando…</strong>
-    <small id="estado-motivo"></small>
+<main>
+  <!-- Três botões numa linha, texto curto: o rótulo longo virava duas
+       linhas ilegíveis num botão de 97px. -->
+  <div class="modos" role="group" aria-label="Modo de captura">
+    <button class="modo" data-modo="auto" title="Grava quando detectar uma reunião">Auto</button>
+    <button class="modo" data-modo="sempre" title="Grava agora, ignorando a detecção">Gravar</button>
+    <button class="modo" data-modo="nunca" title="Não grava nada, nem em reunião">Pausar</button>
   </div>
-</section>
 
-<!-- Controle manual, três estados. -->
-<section class="modos">
-  <button class="modo" data-modo="auto">
-    Automático
-    <small>grava em reuniões</small>
-  </button>
-  <button class="modo" data-modo="sempre">
-    Gravar
-    <small>ignora a detecção</small>
-  </button>
-  <button class="modo" data-modo="nunca">
-    Não gravar
-    <small>silêncio total</small>
-  </button>
-</section>
+  <div class="numeros">
+    <span><b id="n-segmentos">–</b> segmentos</span>
+    <span><b id="n-fala">–</b> de fala</span>
+    <span id="fila-bloco" hidden><b id="n-fila">–</b> na fila</span>
+  </div>
 
-<!-- Números do dia. -->
-<section class="numeros">
-  <div><b id="n-segmentos">–</b><small>segmentos</small></div>
-  <div><b id="n-fala">–</b><small>de fala</small></div>
-  <div><b id="n-fila">–</b><small>na fila</small></div>
-</section>
-
-<!-- Últimas transcrições: confirma que está funcionando sem abrir a interface. -->
-<section class="recentes">
-  <h2>Últimas transcrições</h2>
-  <ul id="lista-recentes"><li class="vazio">Carregando…</li></ul>
-</section>
+  <ul id="lista-recentes" class="recentes"></ul>
+</main>
 
 <footer>
-  <button id="abrir">Abrir a timeline completa</button>
-  <p id="erro" class="erro" hidden></p>
+  <button id="abrir">Ver tudo</button>
+  <span id="erro" class="erro" hidden></span>
 </footer>
 
 <script src="popup.js"></script>

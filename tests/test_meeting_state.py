@@ -161,6 +161,20 @@ def test_o_titulo_tambem_conta(api, com_allowlist):
     assert corpo["ativa"] is True
 
 
+def test_relato_recusado_limpa_o_anterior(api, com_allowlist):
+    """O caso da tela: o Discord seguia marcado como reunião depois de sair
+    da lista, porque o relato antigo continuava vivo até expirar."""
+    com_allowlist(["meet"])
+    api.post("/api/meeting/state", json={"ativa": True, "servico": "meet"})
+    assert api.get("/api/meeting/state").json()["ativa"] is True
+
+    api.post("/api/meeting/state", json={"ativa": True, "servico": "discord"})
+
+    corpo = api.get("/api/meeting/state").json()
+    assert corpo["ativa"] is False
+    assert corpo["servico"] is None, "o relato anterior deveria ter sido limpo"
+
+
 def test_sem_lista_aceita_tudo(api, com_allowlist):
     """Fechar por omissão faria perder reunião — o padrão é aceitar."""
     com_allowlist([])

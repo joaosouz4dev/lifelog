@@ -226,6 +226,9 @@ class CaptureRunner:
         return {
             "em_reuniao": self.meeting.em_reuniao,
             "motivo": self.meeting.motivo,
+            # A bandeja mostra o modo antes do motivo: com "Pausar"
+            # escolhido, dizer "Gravando: discord" seria mentira.
+            "modo": self.meeting.modo,
         }
 
     def _status_ditado(self) -> dict | None:

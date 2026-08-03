@@ -129,6 +129,11 @@ class MeetingDetector:
         """Por que o gate está como está — para a bandeja e o log."""
         return self._motivo
 
+    @property
+    def modo(self) -> str:
+        """auto, sempre ou nunca — o que o usuário escolheu no popup."""
+        return self._modo
+
     # ──────────────────────────── ciclo de vida ────────────────────────────
 
     def start(self) -> None:

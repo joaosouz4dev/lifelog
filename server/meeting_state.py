@@ -99,7 +99,13 @@ def reportar(*, ativa: bool, servico: str | None = None, titulo: str | None = No
     """
     global _estado, _expira_em
 
+    # Recusado: limpa o que havia. Só ignorar deixaria um relato anterior
+    # vivo até expirar — foi assim que o Discord continuou marcado como
+    # reunião depois de sair da lista.
     if ativa and not _servico_permitido(servico, titulo):
+        with _lock:
+            _estado = None
+            _expira_em = 0.0
         return atual()
 
     with _lock:

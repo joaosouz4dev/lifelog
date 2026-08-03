@@ -112,6 +112,12 @@ class LifelogTray:
     def _pause_label(self, _item=None) -> str:
         if self.runner is None:
             return "Pausar captura"
+        # Com o gate de reunião ligado, a pausa vira o modo compartilhado
+        # com o popup da extensão — antes eram dois controles independentes
+        # e pausar num não afetava o outro.
+        estado = self.runner.status().get("meeting")
+        if estado is not None:
+            return "Retomar captura" if estado.get("modo") == "nunca" else "Pausar captura"
         return "Retomar captura" if self.runner.is_paused else "Pausar captura"
 
     def _meeting_line(self, _item=None) -> str:
@@ -121,6 +127,15 @@ class LifelogTray:
         estado = self.runner.status().get("meeting")
         if estado is None:
             return ""  # gate desligado: a captura é contínua, nada a explicar
+
+        # O modo manual vem primeiro: com "Pausar" escolhido no popup, dizer
+        # "Gravando: discord" é mentira, e foi o que aconteceu enquanto o
+        # cache de 2s do detector ainda não tinha atualizado.
+        if estado.get("modo") == "nunca":
+            return "Pausado por você"
+        if estado.get("modo") == "sempre":
+            return "Gravando (ligado por você)"
+
         if estado["em_reuniao"]:
             return f"Gravando: {estado['motivo'][:44]}"
         return f"Em espera: {estado['motivo'][:44]}"
@@ -150,9 +165,37 @@ class LifelogTray:
         with self._lock:
             if self.runner is None:
                 return
-            paused = self.runner.toggle_pause()
+            runner = self.runner
+
+        # Com o gate ligado, pausar pela bandeja e pausar pelo popup têm de
+        # ser a mesma coisa. Dois controles independentes para o mesmo botão
+        # confundem: pausei aqui e o app continuou gravando.
+        estado = runner.status().get("meeting")
+        if estado is not None:
+            novo = "auto" if estado.get("modo") == "nunca" else "nunca"
+            if self._mudar_modo(novo):
+                log.info("captura %s", "pausada" if novo == "nunca" else "retomada")
+                self._refresh()
+                return
+            log.warning("não deu para falar com o servidor; pausando só localmente")
+
+        paused = runner.toggle_pause()
         log.info("captura %s", "pausada" if paused else "retomada")
         self._refresh()
+
+    def _mudar_modo(self, modo: str) -> bool:
+        """Grava o modo no servidor, que é onde popup e app se encontram."""
+        url = self.runner.server_url if self.runner else "http://127.0.0.1:8000"
+        try:
+            import httpx
+
+            resposta = httpx.put(
+                f"{url}/api/meeting/mode", json={"modo": modo}, timeout=4
+            )
+            return resposta.status_code == 200
+        except Exception:
+            log.debug("falha ao mudar o modo no servidor", exc_info=True)
+            return False
 
     def _open_ui(self, _icon=None, _item=None) -> None:
         """Abre a interface numa janela própria, com ícone na barra de tarefas.
